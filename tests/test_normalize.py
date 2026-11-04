@@ -36,6 +36,13 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(normalize_for_speech("A+B"), "A плюс B")
         self.assertEqual(normalize_for_speech("№ 4"), "номер 4")
 
+    def test_comparison_symbols_never_reach_tera_as_tags(self) -> None:
+        self.assertEqual(
+            normalize_for_speech("1 + 1 > два"),
+            "1 плюс 1 больше два",
+        )
+        self.assertEqual(normalize_for_speech("x < y"), "x меньше y")
+
     def test_number_before_sentence_period_is_expanded(self) -> None:
         # Tera's own number regex deliberately skips digits before a dot.
         self.assertEqual(

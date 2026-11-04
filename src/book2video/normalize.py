@@ -158,6 +158,8 @@ def normalize_for_speech(text: str) -> str:
     text = text.replace("—", ",").replace("–", "-")
     text = text.replace("→", " к ").replace("±", " плюс-минус ")
     text = text.replace("°", " градусов ").replace("×", " на ")
+    # A bare angle bracket is read by Tera as a malformed language tag.
+    text = text.replace(">", " больше ").replace("<", " меньше ")
     text = text.replace("©", " копирайт ").replace("®", "").replace("™", "")
 
     # A raw plus sign would be read as Tera's stress marker.

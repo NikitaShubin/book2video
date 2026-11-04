@@ -10,6 +10,10 @@ Backend: **TeraTTSv2** (`TeraSpace/TeraTTSv2`), ONNX, CPU, loaded through
 accentuation; raw text is passed to `normalize_text` and the result is used
 unchanged. See [ADR-0004](adr/0004-tera-stress-as-is.md).
 
+Tera treats bare `<` and `>` as language-tag delimiters. Normalization replaces
+them with «меньше» and «больше» before synthesis, so a comparison such as
+`1 + 1 > два` is read instead of raising `invalid language tags`.
+
 `TeraBackend.synthesize` splits text into sentence-sized chunks
 (`split_sentences`, max 350 characters by default) and calls
 `generate_speech` for each. Chunks are joined with a 0.18 s pause. The split
