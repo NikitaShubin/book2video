@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "book2video"
+version = "0.1.0"
+description = "Turn Russian EPUB books into narrated MP4 videos with synchronized illustrations"
+requires-python = ">=3.10"
+dependencies = [
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    "PyYAML>=6.0",
+    "qrcode>=7.4",
+    "Pillow>=10.0",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+    "num2words>=0.5.13",
+    "transformers>=4.40,<5",
+    "huggingface-hub>=0.34,<1.0",
+    "onnxruntime>=1.17",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+book2video = "book2video.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,29 @@
+services:
+  book2video:
+    build:
+      context: .
+    image: book2video:latest
+    environment:
+      HF_HOME: /models/hf
+      BOOK2VIDEO_CACHE: /cache
+      # Set to 1 to use the model cache without any network access.  The
+      # cache volume already contains TeraTTSv2, so offline mode is enough
+      # for normal builds; leave 0 for the first download.
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-0}
+      OMP_NUM_THREADS: ${BOOK2VIDEO_THREADS:-8}
+      MKL_NUM_THREADS: ${BOOK2VIDEO_THREADS:-8}
+    volumes:
+      # Everything the service needs lives in named volumes or the mounted
+      # books directory. Nothing is installed on the host.
+      - hf-cache:/models/hf
+      - b2v-cache:/cache
+      - ..:/data:ro
+      - ./out:/out
+    # TeraTTSv2 is CPU-only here. It runs at roughly 0.25 RTF on a modern
+    # 16-core CPU, which is enough for a full book overnight.
+    command: ["voices"]
+
+volumes:
+  hf-cache:
+  b2v-cache:

@@ -1,0 +1,20 @@
+# Rebuild the application code on top of the existing image when the network
+# is unavailable.  The base image already contains torch, transformers, Tera
+# and every other dependency; only the pure-Python package changed, so copying
+# it into site-packages is enough.  This avoids re-downloading torch.
+#
+#   docker tag book2video:latest book2video:base
+#   docker build -f Dockerfile.offline -t book2video:latest .
+#
+# For a normal online rebuild use the main Dockerfile instead.
+FROM book2video:base
+
+USER root
+
+COPY src/book2video /usr/local/lib/python3.11/site-packages/book2video
+RUN find /usr/local/lib/python3.11/site-packages/book2video \
+        -name __pycache__ -type d -prune -exec rm -rf {} +
+
+# The entrypoint runs as root and drops privileges with gosu, so the final
+# user must stay root here (same as the main Dockerfile).
+USER root

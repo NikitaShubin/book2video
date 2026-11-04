@@ -1,0 +1,43 @@
+# Generated output: audio, frames, timelines, renders, logs
+/out/*
+!/out/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Books and media (copyrighted and/or large)
+*.epub
+*.mp4
+*.mkv
+*.mov
+*.wav
+*.flac
+*.mp3
+
+# Model caches
+/models/
+/hf-cache/
+*.onnx
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
