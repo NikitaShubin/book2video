@@ -34,13 +34,13 @@ def default_atempo_workers() -> int:
     return min(8, os.cpu_count() or 1)
 
 
-def _stretch_pending(
+def _apply_atempo_parallel(
     pending: list[tuple[Path, Path]],
     speed: float,
     workers: int,
     log,
 ) -> None:
-    """Apply ``atempo`` to every ``(natural, stretched)`` pair concurrently.
+    """Apply ``atempo`` to every ``(natural, adjusted)`` pair concurrently.
 
     Workers only block on ffmpeg subprocesses, so threads are enough; a
     process pool would add pickling cost for no gain.  Each ``apply_speed``
@@ -48,11 +48,11 @@ def _stretch_pending(
     """
     if not pending:
         return
-    log(f"Stretching {len(pending)} segment(s) at {speed:.3f}x with {workers} worker(s)")
+    log(f"Applying atempo to {len(pending)} segment(s) at {speed:.3f}x with {workers} worker(s)")
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [
-            pool.submit(apply_speed, natural, stretched, speed)
-            for natural, stretched in pending
+            pool.submit(apply_speed, natural, adjusted, speed)
+            for natural, adjusted in pending
         ]
         for future in futures:
             future.result()
@@ -70,7 +70,7 @@ def synthesize_plans(
     """Synthesize every segment and apply the speed change.
 
     Two phases keep Tera's own threads busy only with synthesis: first all
-    missing natural WAVs are rendered sequentially, then all missing stretched
+    missing natural WAVs are rendered sequentially, then all missing speed-adjusted
     WAVs are produced by a pool of ffmpeg processes.  Cached files from an
     earlier run are reused in both phases, so restarts resume cheaply.
     """
@@ -91,12 +91,12 @@ def synthesize_plans(
         for index, segment in enumerate(plan.segments):
             stem = f"ch{plan.chapter.index:02d}_{index:04d}"
             natural_path = audio_dir / f"{stem}.wav"
-            stretched_path = (
+            speed_path = (
                 natural_path
                 if abs(speed - 1.0) < 1e-6
                 else audio_dir / f"{stem}_s{speed:.3f}_at.wav"
             )
-            entries.append((plan, segment, natural_path, stretched_path))
+            entries.append((plan, segment, natural_path, speed_path))
 
     missing_natural = [
         segment
@@ -116,11 +116,11 @@ def synthesize_plans(
         )
 
     pending = [
-        (natural_path, stretched_path)
-        for _, _, natural_path, stretched_path in entries
-        if natural_path != stretched_path and not stretched_path.exists()
+        (natural_path, speed_path)
+        for _, _, natural_path, speed_path in entries
+        if natural_path != speed_path and not speed_path.exists()
     ]
-    _stretch_pending(pending, speed, atempo_workers, log)
+    _apply_atempo_parallel(pending, speed, atempo_workers, log)
 
     done = 0
     total_audio = 0.0

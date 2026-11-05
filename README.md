@@ -138,12 +138,12 @@ checked by ear before a full build.
 Default is **1.2×**. Tera always renders natural speech; the speed-up is
 applied afterwards with ffmpeg `atempo` (WSOLA, pitch-preserving). ffmpeg 8
 accepts a single `atempo` pass for the whole 0.5–100 range, so no filter chain
-is used. Synthesis and stretching are separate phases: Tera renders missing
-natural WAVs sequentially, then a bounded pool of ffmpeg processes stretches
+is used. Synthesis and the speed change are separate phases: Tera renders missing
+natural WAVs sequentially, then a bounded pool of ffmpeg processes applies atempo to
 the segments that are not cached yet (`--atempo-workers`, default
-`min(8, CPU count)`). Intermediate stretched files are float32 and written
-atomically; the narration is written once as PCM16. Pauses are not stretched,
-and the timeline is built from the actual post-stretch durations, so audio,
+`min(8, CPU count)`). Intermediate speed-adjusted files are float32 and written
+atomically; the narration is written once as PCM16. Pauses are not time-scaled,
+and the timeline is built from the actual post-atempo durations, so audio,
 frames, and chapter markers stay in sync. Interrupting a build loses at most
 the segment being worked on; a restart reuses both caches.
 
@@ -216,7 +216,7 @@ src/book2video/epub.py      spine, blocks, front/back matter filtering
 src/book2video/normalize.py numbers, years, abbreviations, units, URLs
 src/book2video/timeline.py  segments, anchors, midpoint scheduling, QR frames
 src/book2video/audio.py     TTS orchestration, loudness, WAV assembly
-src/book2video/speed.py     ffmpeg atempo time-stretch
+src/book2video/speed.py     ffmpeg atempo time scaling
 src/book2video/render.py    frames, ffmpeg render, metadata, chapters
 src/book2video/build.py     end-to-end orchestration
 src/book2video/cli.py       voices, say, stress, inspect, build

@@ -1,4 +1,4 @@
-"""Time-stretch synthesized speech with ffmpeg ``atempo``.
+"""Time-scale synthesized speech with ffmpeg ``atempo``.
 
 Tera always renders at natural speed; the only speed change is ffmpeg's
 ``atempo`` (WSOLA), applied as a single pass.  ffmpeg 8 accepts the whole
@@ -55,7 +55,7 @@ def apply_speed(
     dst: str | Path,
     speed: float,
 ) -> Path:
-    """Write a pitch-preserving, time-stretched copy of ``src`` to ``dst``.
+    """Write a pitch-preserving, time-scaled copy of ``src`` to ``dst``.
 
     The output is float32 WAV so a later normalization / concatenation step
     does not quantize the signal a second time.  The final narration is

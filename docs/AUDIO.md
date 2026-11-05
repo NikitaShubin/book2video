@@ -60,24 +60,24 @@ Default: **1.2×**. Tera always renders at natural speed; `speed.apply_speed`
 uses ffmpeg `atempo` (WSOLA, pitch-preserving) in a single pass.
 
 Synthesis runs in two phases so the slow, thread-hungry model and the cheap,
-process-bound stretch never compete for the same resources:
+process-bound speed change never compete for the same resources:
 
 1. every missing natural WAV is rendered sequentially by Tera;
-2. every missing stretched WAV is produced by a `ThreadPoolExecutor` of
+2. every missing speed-adjusted WAV is produced by a `ThreadPoolExecutor` of
    `--atempo-workers` ffmpeg processes (default `min(8, CPU count)`).
 
 Cached files are skipped in both phases, so a restart after an interruption
 resumes from the last finished segment. A thread pool is enough because each
-worker only waits on a subprocess. Each stretch writes `.<name>.part.wav` and
+worker only waits on a subprocess. Each atempo run writes `.<name>.part.wav` and
 renames it on success, so a killed build cannot leave a truncated file that a
 later run mistakes for a cache hit.
 
 - ffmpeg 8 accepts `atempo` in the range 0.5–100, so one filter covers every
   supported rate. Only speeds below 0.5 chain `atempo=0.5` stages.
-- Intermediate stretched files are `pcm_f32le`, 44.1 kHz, mono.
+- Intermediate speed-adjusted files are `pcm_f32le`, 44.1 kHz, mono.
 - The final narration is written once as `pcm_s16le`.
-- Pauses are inserted after stretching, so they keep their intended length.
-- The timeline uses the measured duration of the stretched file, so frames and
+- Pauses are inserted after the speed change, so they keep their intended length.
+- The timeline uses the measured duration of the speed-adjusted file, so frames and
   chapter markers stay aligned with the audio.
 
 Pitch behaviour: on the pilot, frame-wise F0 stayed within about 1.5 Hz of the

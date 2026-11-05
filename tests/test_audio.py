@@ -62,7 +62,7 @@ def _plans(chapters: int = 2, segments: int = 3) -> list[ChapterPlan]:
 
 
 class SynthesizePlansTests(unittest.TestCase):
-    def test_stretches_every_segment_and_reuses_the_cache(self) -> None:
+    def test_applies_speed_and_reuses_the_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             backend = FakeBackend()
@@ -102,7 +102,7 @@ class SynthesizePlansTests(unittest.TestCase):
                 [s.audio_path for p in plans for s in p.segments],
             )
 
-    def test_stretch_runs_concurrently(self) -> None:
+    def test_atempo_runs_concurrently(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             backend = FakeBackend()
@@ -134,7 +134,7 @@ class SynthesizePlansTests(unittest.TestCase):
             self.assertGreater(
                 state["peak"],
                 1,
-                "atempo calls did not overlap; the stretch phase is sequential",
+                "atempo calls did not overlap; the speed phase is sequential",
             )
 
     def test_invalid_workers_are_rejected(self) -> None:

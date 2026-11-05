@@ -1,7 +1,7 @@
 # Architecture
 
 `book2video` is a batch pipeline with one deep scheduling core. EPUB parsing,
-normalisation and illustration timing are pure modules; synthesis, time-stretch
+normalisation and illustration timing are pure modules; synthesis, time scaling
 and rendering sit behind narrow adapters. The container is the only runtime.
 
 ## Product invariants
@@ -35,7 +35,7 @@ flowchart LR
     BOOK -->|plan_chapters| PLAN[ChapterPlan list]
     PLAN -->|carry_frames| PLAN
     PLAN -->|synthesize_plans: synthesize missing| NATURAL[Natural Segment WAVs]
-    NATURAL -->|parallel apply_speed| AUDIO[Stretched Segment WAVs + durations]
+    NATURAL -->|parallel apply_speed| AUDIO[Speed-adjusted Segment WAVs + durations]
     AUDIO -->|assign_audio_times| TIMED[Segments and Frames with times]
     TIMED -->|assemble_audio| WAV[narration.wav]
     TIMED -->|prepare_frames| PNG[frame PNGs]
@@ -74,7 +74,7 @@ There are three real seams:
   out_path)`. Production uses `TeraBackend`; `test_build` uses `FakeBackend`.
   The interface is intentionally duck-typed: no abstract base class until a
   second production backend exists.
-- **Time-stretch** — `speed.apply_speed` is the only module that knows about
+- **Time scaling** — `speed.apply_speed` is the only module that knows about
   ffmpeg's `atempo`. `audio` runs those calls in a thread pool; the rest of the
   pipeline sees durations.
 - **Render** — `render.render` is the only module that composes the ffmpeg
