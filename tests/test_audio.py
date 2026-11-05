@@ -143,6 +143,37 @@ class SynthesizePlansTests(unittest.TestCase):
                 old_paths,
             )
 
+    def test_identical_segments_share_one_synthesis_and_one_atempo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            backend = FakeBackend()
+            plans = _plans(chapters=1, segments=2)
+            plans[0].segments[1].text = plans[0].segments[0].text
+
+            calls: list[Path] = []
+
+            def fake_apply_speed(src: Path, dst: Path, speed: float) -> Path:
+                calls.append(Path(dst))
+                Path(dst).write_bytes(Path(src).read_bytes())
+                return Path(dst)
+
+            with mock.patch("book2video.audio.apply_speed", fake_apply_speed):
+                synthesize_plans(
+                    backend,
+                    plans,
+                    work,
+                    speed=2.0,
+                    atempo_workers=4,
+                    log=lambda *_: None,
+                )
+
+            self.assertEqual(backend.calls, 1)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(
+                plans[0].segments[0].audio_path,
+                plans[0].segments[1].audio_path,
+            )
+
     def test_atempo_runs_concurrently(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)

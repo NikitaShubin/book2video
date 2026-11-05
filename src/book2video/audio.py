@@ -113,11 +113,11 @@ def synthesize_plans(
             )
             entries.append((plan, segment, natural_path, speed_path))
 
-    missing_natural = [
-        segment
-        for _, segment, natural_path, _ in entries
+    missing_natural = {
+        natural_path
+        for _, _, natural_path, _ in entries
         if not natural_path.exists()
-    ]
+    }
     if missing_natural:
         log(f"Synthesizing {len(missing_natural)}/{total} segment(s) with Tera")
 
@@ -130,11 +130,17 @@ def synthesize_plans(
             out_path=natural_path,
         )
 
-    pending = [
-        (natural_path, speed_path)
-        for _, _, natural_path, speed_path in entries
-        if natural_path != speed_path and not speed_path.exists()
-    ]
+    pending = []
+    seen_speed: set[Path] = set()
+    for _, _, natural_path, speed_path in entries:
+        if natural_path == speed_path or speed_path.exists():
+            continue
+        # Identical segments share one content-addressed file.  Submit each
+        # destination once, or two workers race to rename the same .part.wav.
+        if speed_path in seen_speed:
+            continue
+        seen_speed.add(speed_path)
+        pending.append((natural_path, speed_path))
     _apply_atempo_parallel(pending, speed, atempo_workers, log)
 
     done = 0
