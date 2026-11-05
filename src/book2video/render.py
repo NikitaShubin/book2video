@@ -30,6 +30,12 @@ CONTENT_MUTED = (154, 160, 170)
 CONTENT_QR_SIZE = 112
 CONTENT_QR_PAD = 8
 
+# Every still image passed to the concat filter keeps a decoder and a frame
+# buffer alive.  A book with hundreds of illustrations can exhaust a 16 GiB
+# container before encoding starts, so render in bounded chunks and join the
+# encoded parts with the concat demuxer.
+MAX_RENDER_INPUTS = 96
+
 _FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -395,6 +401,31 @@ def render(
 
     audio_duration = sf.info(str(audio_path)).duration
 
+    if len(entries) <= MAX_RENDER_INPUTS:
+        _render_single(
+            entries,
+            audio_path=audio_path,
+            metadata_path=metadata_path,
+            out_path=out_path,
+            audio_duration=audio_duration,
+            crf=crf,
+            preset=preset,
+        )
+    else:
+        _render_chunked(
+            entries,
+            audio_path=audio_path,
+            metadata_path=metadata_path,
+            out_path=out_path,
+            audio_duration=audio_duration,
+            work=work,
+            crf=crf,
+            preset=preset,
+        )
+    return out_path
+
+
+def _frame_inputs(entries: list[tuple[str, float, float]]) -> list[str]:
     # The concat demuxer ignores per-image durations for still images in
     # ffmpeg 7.  Loop each frame for its exact duration and join the streams
     # with the concat filter instead: this keeps cuts frame-accurate.
@@ -411,20 +442,35 @@ def render(
             "-i",
             str(Path(image).resolve()),
         ]
+    return inputs
+
+
+def _concat_filter(count: int) -> list[str]:
+    if count == 1:
+        return ["-map", "0:v:0"]
+    chains = "".join(f"[{index}:v]" for index in range(count))
+    return [
+        "-filter_complex",
+        f"{chains}concat=n={count}:v=1:a=0[v]",
+        "-map",
+        "[v]",
+    ]
+
+
+def _render_single(
+    entries: list[tuple[str, float, float]],
+    *,
+    audio_path: str | Path,
+    metadata_path: Path,
+    out_path: Path,
+    audio_duration: float,
+    crf: int,
+    preset: str,
+) -> None:
+    inputs = _frame_inputs(entries)
     audio_index = len(entries)
     metadata_index = audio_index + 1
     inputs += ["-i", str(audio_path), "-i", str(metadata_path)]
-
-    if len(entries) == 1:
-        filter_args = ["-map", "0:v:0"]
-    else:
-        chains = "".join(f"[{index}:v]" for index in range(len(entries)))
-        filter_args = [
-            "-filter_complex",
-            f"{chains}concat=n={len(entries)}:v=1:a=0[v]",
-            "-map",
-            "[v]",
-        ]
 
     command = [
         "ffmpeg",
@@ -433,7 +479,7 @@ def render(
         "-loglevel",
         "error",
         *inputs,
-        *filter_args,
+        *_concat_filter(len(entries)),
         "-map",
         f"{audio_index}:a:0",
         "-map_metadata",
@@ -464,7 +510,106 @@ def render(
         str(out_path),
     ]
     subprocess.run(command, check=True)
-    return out_path
+
+
+def _render_chunked(
+    entries: list[tuple[str, float, float]],
+    *,
+    audio_path: str | Path,
+    metadata_path: Path,
+    out_path: Path,
+    audio_duration: float,
+    work: Path,
+    crf: int,
+    preset: str,
+) -> None:
+    parts_dir = work / "render-parts"
+    if parts_dir.exists():
+        shutil.rmtree(parts_dir)
+    parts_dir.mkdir(parents=True)
+
+    parts: list[Path] = []
+    for index, offset in enumerate(range(0, len(entries), MAX_RENDER_INPUTS)):
+        chunk = entries[offset : offset + MAX_RENDER_INPUTS]
+        duration = sum(max(0.04, end - start) for _, start, end in chunk)
+        part = parts_dir / f"part_{index:03d}.mp4"
+        command = [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            *_frame_inputs(chunk),
+            *_concat_filter(len(chunk)),
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            preset,
+            "-crf",
+            str(crf),
+            "-pix_fmt",
+            "yuv420p",
+            "-r",
+            "30",
+            "-t",
+            f"{duration:.3f}",
+            str(part),
+        ]
+        subprocess.run(command, check=True)
+        parts.append(part)
+
+    concat_list = parts_dir / "parts.txt"
+    concat_list.write_text(
+        "".join(f"file '{part.resolve()}'\n" for part in parts),
+        encoding="utf-8",
+    )
+    command = [
+        "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        str(concat_list),
+        "-i",
+        str(audio_path),
+        "-i",
+        str(metadata_path),
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
+        "-map_metadata",
+        "2",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-ar",
+        "44100",
+        "-ac",
+        "1",
+        "-movflags",
+        "+faststart",
+        "-t",
+        f"{audio_duration:.3f}",
+        "-shortest",
+        str(out_path),
+    ]
+    try:
+        subprocess.run(command, check=True)
+    except subprocess.CalledProcessError:
+        # Keep the encoded parts: the expensive pass can be inspected or
+        # reused while diagnosing the mux step.
+        raise
+    shutil.rmtree(parts_dir)
 
 
 def write_timeline(

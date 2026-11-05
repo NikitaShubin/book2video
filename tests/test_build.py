@@ -19,6 +19,7 @@ import numpy as np
 import soundfile as sf
 from PIL import Image
 
+import book2video.render as render_module
 from book2video.build import build
 from book2video.links import LinkPreview
 
@@ -116,6 +117,58 @@ class BuildIntegrationTests(unittest.TestCase):
             self.assertTrue(out.exists())
             self.assertGreater(out.stat().st_size, 10_000)
             self.assertGreater(backend.calls, 0)
+
+            probe = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-show_entries",
+                    "stream=codec_type,codec_name",
+                    "-show_chapters",
+                    "-of",
+                    "json",
+                    str(out),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            data = json.loads(probe.stdout)
+            self.assertGreater(float(data["format"]["duration"]), 2.0)
+            codecs = {stream["codec_type"]: stream["codec_name"] for stream in data["streams"]}
+            self.assertEqual(codecs["video"], "h264")
+            self.assertEqual(codecs["audio"], "aac")
+            self.assertEqual(data["chapters"][0]["tags"]["title"], "Глава 1. Начало")
+
+    def test_many_frames_are_rendered_in_chunks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            epub = root / "book.epub"
+            out = root / "book.mp4"
+            work = root / "work"
+            _write_epub(epub)
+
+            original = render_module.MAX_RENDER_INPUTS
+            render_module.MAX_RENDER_INPUTS = 1
+            try:
+                result = build(
+                    epub,
+                    out,
+                    work_dir=work,
+                    speed=1.0,
+                    backend=FakeBackend(),
+                    link_resolver=lambda links: {},
+                    log=lambda *_: None,
+                )
+            finally:
+                render_module.MAX_RENDER_INPUTS = original
+
+            self.assertEqual(result, out)
+            self.assertTrue(out.exists())
+            self.assertFalse((work / "render-parts").exists())
 
             probe = subprocess.run(
                 [
