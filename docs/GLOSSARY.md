@@ -30,9 +30,41 @@ content chapters and are never narrated.
 
 ## Narration and timing
 
-**Segment** — one narrated unit: a heading, paragraph, sidebar, caption, or the
-spoken form of a URL. Every Segment is synthesized separately, so its measured
-duration gives an exact start time.
+**Segment** — one narrated unit: a heading, paragraph, sidebar, caption, the
+spoken form of a URL, or a link annotation. Every Segment is synthesized
+separately, so its measured duration gives an exact start time.
+
+**Link** — an external HTTP(S) reference found inside a Block. Footnote links
+are not Links for narration. Every other unique URL gets a link Segment and a
+**Frame**.
+
+**Link preview** (`LinkPreview`) — a still captured for a Link: the first page
+of a PDF, the first slide, the first screen of a site, or an image. It carries
+`kind`, `title`, `page_count`, `full`, the image path, and derives the footer
+**status** and the **annotation**.
+
+**Content frame** — a Frame that shows a Link preview in the dark content
+layout: preview `contain`, compact URL and mini-QR in the footer. A **full**
+preview has no status; a **partial** one says how much is on screen.
+
+**QR frame** — the fallback Frame for a Link with no preview. The full URL is
+both the caption and the encoded content. It is scheduled like any other
+frame.
+
+**Annotation** — the short sentence read by the annotation voice after the
+spoken URL: «На экране документ „X“» for a full document,
+«…, страница 1 из N, остальное по ссылке» for a partial one, «На экране первый
+экран сайта, остальное по ссылке» for a site, «На экране изображение» for an
+image.
+
+**Frame hold** — the minimum time a Frame should stay on screen
+(`--frame-hold`, default 8 s). Inside one Chapter, if the narration is long
+enough every Frame gets at least one hold; otherwise all Frames are shortened
+equally.
+
+**Mention** — the Segment that introduces a Frame (a caption or a spoken URL).
+The scheduler prefers the mention to sit inside its own frame with at least
+half a hold after it starts, and minimises deviation when that is impossible.
 
 **Plan** — the ordered **Segments** and **Frames** for a set of Chapters, with
 pauses, anchors and times. `plan_chapter` builds one; `plan_chapters` builds a
@@ -42,28 +74,21 @@ list; `assign_audio_times` fills in the clock.
 `end`.
 
 **Anchor** — the point in the narration where a Frame is introduced. Usually
-the start of the caption Segment, or the start of the URL Segment for a QR
+the start of the caption Segment, or the start of the URL Segment for a link
 frame. A Frame without a caption anchors after the previous Segment.
 
-**Area of influence** — the interval a Frame is on screen: from the midpoint
-between its own Anchor and the previous Anchor, until the next Frame's cut. A
-frame therefore owns the narration that follows its anchor, not a fixed
-duration.
+**Area of influence** — the interval a Frame is on screen, computed by the
+frame scheduler. It starts at the natural cut between neighbouring Anchors and
+is then adjusted for the Frame hold and the mention preference. A frame owns
+the narration around its anchor, not a fixed duration.
 
-**Midpoint rule** — a cut happens at the midpoint between two Anchors. The
-first Frame of a chapter cuts in at the chapter start; the last one stays until
-the chapter end.
+**Frame** — one still shown in the video: `figure`, `table`, `html_table`,
+`qr`, `content` or `blank`. It has an Anchor, a start, an end, an optional
+minimum hold and, for `content`, a `LinkPreview`.
 
 **Carry** — when a Chapter has no Frames, the previous Chapter's last Frame
 stays on screen. Before the first illustration of the Book, a **blank frame**
 (neutral paper) is used instead of a black screen.
-
-**Frame** — one still shown in the video: `figure`, `table`, `html_table`, `qr`
-or `blank`. It has an Anchor, a start, an end and an optional minimum hold.
-
-**QR frame** — a Frame generated from an external URL. It is scheduled exactly
-like a figure: it has its own Anchor and area of influence, and no fixed
-maximum duration. The full URL is both the caption and the encoded content.
 
 **Timeline JSON** — the machine-readable dump of every Segment and Frame with
 its times and the frame file. Written to the **work directory**; useful for
@@ -72,8 +97,13 @@ debugging and for checking sync without watching the video.
 ## Audio
 
 **Voice** — one of the ten TeraTTSv2 voice ids in `voices.py`. The **main
-voice** narrates headings, paragraphs and captions. The **sidebar voice**
-narrates Sidebars and defaults to the opposite-gender native voice.
+voice** narrates headings, paragraphs, captions and compressed URLs. The
+**sidebar voice** narrates Sidebars and annotations and defaults to the
+opposite-gender native voice. An explicit `--sidebar-voice` is always obeyed,
+including a whisper voice.
+
+**Annotation voice** — the voice used for the **Annotation** after a spoken
+URL. It is the sidebar voice.
 
 **Chunk cache** — per-sentence WAV files keyed by model, voice and Tera's
 marked text. Re-renders reuse them; changing the voice or the text creates new
@@ -86,8 +116,10 @@ It is the single audio source for the MP4.
 `atempo`. `1.2` is the default; `1.0` is natural speed. It is not a Tera
 parameter.
 
-**Work directory** — where segment audio, frame PNGs, `timeline.json`,
-`frames.txt`, `metadata.txt` and `narration.wav` live. Rebuilding it is safe.
+**Work directory** — where segment audio, link previews, frame PNGs,
+`timeline.json`, `frames.txt`, `metadata.txt` and `narration.wav` live.
+Rebuilding derived files is safe; the `audio/` and `links/` caches make
+re-runs cheap.
 
 ## Architecture
 

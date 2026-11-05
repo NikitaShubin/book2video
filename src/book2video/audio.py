@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -58,6 +59,20 @@ def _apply_atempo_parallel(
             future.result()
 
 
+def _segment_stem(segment: Segment) -> str:
+    """Content address for a segment's audio.
+
+    Segment indices shift whenever the plan gains a link sentence or a
+    caption, so an index-based filename would silently reuse the wrong audio.
+    Keying by voice and text keeps the cache correct across plan changes and
+    lets identical segments share one file.
+    """
+    digest = hashlib.sha256(
+        f"{segment.voice}\0{segment.text}".encode("utf-8")
+    ).hexdigest()
+    return digest[:20]
+
+
 def synthesize_plans(
     backend,
     plans: list[ChapterPlan],
@@ -88,8 +103,8 @@ def synthesize_plans(
     entries: list[tuple[ChapterPlan, Segment, Path, Path]] = []
     total = sum(len(plan.segments) for plan in plans)
     for plan in plans:
-        for index, segment in enumerate(plan.segments):
-            stem = f"ch{plan.chapter.index:02d}_{index:04d}"
+        for segment in plan.segments:
+            stem = _segment_stem(segment)
             natural_path = audio_dir / f"{stem}.wav"
             speed_path = (
                 natural_path
@@ -159,8 +174,6 @@ def assemble_audio(plans: list[ChapterPlan], out_path: str | Path) -> float:
             if segment.pause_before > 0:
                 pieces.append(np.zeros(int(rate * segment.pause_before), dtype=np.float32))
             pieces.append(audio)
-            if segment.hold_after > 0:
-                pieces.append(np.zeros(int(rate * segment.hold_after), dtype=np.float32))
 
     if not pieces or sample_rate is None:
         raise ValueError("Nothing to assemble")

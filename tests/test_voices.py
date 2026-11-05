@@ -23,6 +23,10 @@ class VoiceTests(unittest.TestCase):
         self.assertEqual(get_voice(DEFAULT_MAIN_VOICE).language, "ru")
         self.assertEqual(get_voice(DEFAULT_SIDEBAR_VOICE).language, "ru")
 
+    def test_default_sidebar_voice_is_never_whisper(self) -> None:
+        for voice_id in VOICE_IDS:
+            self.assertNotIn("whisper", opposite_gender(voice_id))
+
     def test_opposite_gender_prefers_native_russian(self) -> None:
         self.assertEqual(opposite_gender("ru_m5"), "ru_f1")
         self.assertEqual(opposite_gender("ru_f1"), "ru_m1")

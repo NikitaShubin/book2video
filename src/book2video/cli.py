@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
+import shutil
+import tempfile
 from pathlib import Path
 
 from .voices import TERA_VOICES, VOICE_IDS, get_voice
@@ -76,6 +79,124 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
         book.close()
 
 
+def _cmd_links(args: argparse.Namespace) -> int:
+    from .epub import load_book, select_chapter
+    from .links import collect_links, resolve_links
+
+    book = load_book(args.epub)
+    temporary: tempfile.TemporaryDirectory | None = None
+    try:
+        chapters = (
+            [select_chapter(book, args.chapter)] if args.chapter else list(book.chapters)
+        )
+        links = collect_links(chapters)
+        if args.work_dir:
+            work = Path(args.work_dir)
+        else:
+            temporary = tempfile.TemporaryDirectory(prefix="book2video-links-")
+            work = Path(temporary.name)
+
+        previews = resolve_links(
+            links.keys(),
+            work / "links",
+            offline=args.offline_links,
+            anchors=links,
+            log=print,
+        )
+
+        rows = []
+        for url, anchor in links.items():
+            preview = previews.get(url)
+            rows.append(
+                {
+                    "decision": "content" if preview else "qr",
+                    "kind": preview.kind if preview else "",
+                    "pages": preview.page_count if preview else None,
+                    "title": preview.title if preview else "",
+                    "anchor": anchor,
+                    "url": url,
+                    "status": preview.status if preview else None,
+                    "annotation": preview.annotation if preview else None,
+                }
+            )
+
+        if args.json:
+            print(json.dumps(rows, ensure_ascii=False, indent=2))
+        else:
+            if not rows:
+                print("No external links found")
+            else:
+                print(
+                    f"{'decision':<8} {'kind':<9} {'pages':>5}  "
+                    f"{'title':<30} url"
+                )
+                print("-" * 100)
+                for row in rows:
+                    pages = row["pages"] if row["pages"] is not None else "—"
+                    title = (row["title"] or "—")[:30]
+                    print(
+                        f"{row['decision']:<8} {row['kind'] or '—':<9} "
+                        f"{pages:>5}  {title:<30} {row['url']}"
+                    )
+        return 0
+    finally:
+        book.close()
+        if temporary is not None:
+            temporary.cleanup()
+
+
+def _is_work_dir(name: str) -> bool:
+    return (
+        name.startswith("_work_")
+        or name.startswith("_links_")
+        or (name.startswith(".") and name.endswith("_work"))
+    )
+
+
+def _dir_size(path: Path) -> int:
+    total = 0
+    for item in path.rglob("*"):
+        try:
+            if item.is_file():
+                total += item.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def _cmd_clean_cache(args: argparse.Namespace) -> int:
+    root = Path(args.root)
+    if args.work_dir:
+        targets = [Path(args.work_dir)]
+    elif root.exists():
+        targets = sorted(
+            item
+            for item in root.iterdir()
+            if item.is_dir() and _is_work_dir(item.name)
+        )
+    else:
+        targets = []
+
+    if not targets:
+        print("No work directories found")
+        return 0
+
+    for target in targets:
+        resolved = target.resolve()
+        if resolved == Path("/") or resolved == root.resolve():
+            print(f"Refusing to remove {target}")
+            continue
+        if not target.is_dir():
+            print(f"Not a directory, skipped: {target}")
+            continue
+        size = _dir_size(target)
+        action = "would remove" if args.dry_run else "removing"
+        print(f"{action} {target} ({size / 1_000_000:.1f} MB)")
+        if not args.dry_run:
+            shutil.rmtree(target)
+    return 0
+
+
 def _cmd_build(args: argparse.Namespace) -> int:
     from .build import build
 
@@ -89,11 +210,13 @@ def _cmd_build(args: argparse.Namespace) -> int:
         work_dir=args.work_dir,
         provider=args.provider,
         threads=args.threads,
-        table_min_hold=args.table_hold,
+        frame_hold=args.frame_hold,
         speed=args.speed,
         atempo_workers=args.atempo_workers,
         crf=args.crf,
         preset=args.preset,
+        offline_links=args.offline_links,
+        store_cache=args.store_cache,
     )
     return 0
 
@@ -131,6 +254,33 @@ def build_parser() -> argparse.ArgumentParser:
                            help="chapter number to dump block by block")
     p_inspect.set_defaults(func=_cmd_inspect)
 
+    p_links = sub.add_parser(
+        "links",
+        help="resolve and classify external links without building a video",
+    )
+    p_links.add_argument("epub")
+    p_links.add_argument("--chapter", default=None,
+                         help="only this chapter number or title fragment")
+    p_links.add_argument("--offline-links", action="store_true",
+                         help="use the per-book cache only; cache misses stay QR")
+    p_links.add_argument("--work-dir", default=None,
+                         help="keep the link cache here (default: a temporary dir)")
+    p_links.add_argument("--json", action="store_true",
+                         help="print the decisions as JSON")
+    p_links.set_defaults(func=_cmd_links)
+
+    p_clean = sub.add_parser(
+        "clean-cache",
+        help="remove per-book work directories",
+    )
+    p_clean.add_argument("--root", default="out",
+                         help="directory to scan for _work_* directories")
+    p_clean.add_argument("--work-dir", default=None,
+                         help="remove only this work directory")
+    p_clean.add_argument("--dry-run", action="store_true",
+                         help="list what would be removed")
+    p_clean.set_defaults(func=_cmd_clean_cache)
+
     p_build = sub.add_parser("build", help="build a video from an EPUB")
     p_build.add_argument("epub")
     p_build.add_argument("--out", default="out.mp4")
@@ -141,9 +291,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.add_argument("--voice", default="ru_m5", choices=VOICE_IDS)
     p_build.add_argument("--sidebar-voice", default=None, choices=VOICE_IDS)
     p_build.add_argument("--work-dir", default=None,
-                         help="directory for audio, frames and timeline.json")
-    p_build.add_argument("--table-hold", type=float, default=8.0,
-                         help="minimum seconds a table stays on screen")
+                         help="directory for audio, previews, frames and timeline.json")
+    p_build.add_argument("--frame-hold", type=float, default=8.0,
+                         help="minimum seconds a frame stays on screen (default: 8)")
+    p_build.add_argument("--offline-links", action="store_true",
+                         help="use cached link previews only; cache misses stay QR")
+    p_build.add_argument("--store-cache", action="store_true",
+                         help="keep the per-book work cache after a successful build")
     p_build.add_argument("--speed", type=float, default=1.2,
                          help="speech rate multiplier (1.0 = natural, default 1.2)")
     p_build.add_argument("--atempo-workers", type=int, default=None,

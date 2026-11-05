@@ -3,19 +3,24 @@
 Turn Russian EPUB books into long narrated MP4 videos with illustrations
 synchronized to the narration.
 
-One video per book. Only illustrations are shown: static frames, hard cuts, no
-subtitles, no on-screen titles. Images never appear before their chapter starts.
-Everything runs inside a container; the host needs Docker and nothing else.
+One video per book. Only stills are shown: illustrations, tables and link
+previews; static frames, hard cuts, no subtitles, no on-screen titles. Images
+never appear before their chapter starts. Everything runs inside a container;
+the host needs Docker and nothing else.
 
 ## What it produces
 
 - A single 1920×1080 H.264/AAC MP4 per book, with MP4 metadata and one chapter
   marker per content chapter.
 - Narration from a local TTS model (TeraTTSv2, ONNX, CPU).
-- Illustrations, tables and QR codes anchored to the sentence that introduces
-  them. Cuts land at the midpoint between two anchors.
+- Illustrations, tables and link previews anchored to the sentence that
+  introduces them. Every frame stays at least `--frame-hold` seconds when the
+  chapter has room; otherwise all frames are shortened equally.
 - Sidebars read in place with an opposite-gender voice.
-- URLs read aloud and shown as a QR frame with the full URL as a caption.
+- Links read aloud: a compressed URL in the main voice, then a short
+  annotation in the other voice. The frame shows the first page or first
+  screen when it can be rendered, with the compact URL and a mini-QR in the
+  footer. Anything that cannot be rendered falls back to a full QR frame.
 
 The full illustration and content-selection policy is in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The words used in the code are
@@ -41,6 +46,8 @@ only after one chapter passes the listening check in
 - Docker with Compose.
 - No CUDA, no Python, no ffmpeg on the host. The image is CPU-only.
 - Roughly 3 GB of disk for the image and model cache, plus space for output.
+- Network access for link previews (Google Docs, Yandex Disk, generic sites).
+  Rendering and TTS are otherwise local; `--offline-links` avoids the network.
 - About 0.25 RTF for synthesis on a 16-core CPU: a 5-hour book takes roughly
   1.5 hours of synthesis. Audio chunks are cached, so re-renders are cheaper.
 
@@ -70,6 +77,9 @@ docker compose run --rm book2video inspect "/data/My Book.epub"
 
 # Dump one chapter block by block.
 docker compose run --rm book2video inspect "/data/My Book.epub" --blocks 4
+
+# Resolve every external link without building a video.
+docker compose run --rm book2video links "/data/My Book.epub"
 
 # Render one chapter as a pilot.
 docker compose run --rm book2video build "/data/My Book.epub" \
@@ -109,13 +119,48 @@ make clean                       # remove out/*
 | `book2video stress "текст"` | print Tera's own stress markup |
 | `book2video inspect book.epub` | list parsed chapters and counts |
 | `book2video inspect book.epub --blocks 4` | dump one chapter block by block |
+| `book2video links book.epub` | resolve and classify every external link (dry run) |
+| `book2video links book.epub --json` | the same decisions as JSON |
 | `book2video build book.epub` | build the first content chapter |
 | `book2video build book.epub --chapter 4` | build one chapter by number or title fragment |
 | `book2video build book.epub --all` | build every content chapter into one video |
+| `book2video clean-cache --root out` | remove per-book work directories (`--dry-run` to list) |
 
 Global options `--provider` and `--threads` control the ONNX runtime. Build
-options: `--voice`, `--sidebar-voice`, `--work-dir`, `--table-hold`, `--speed`,
-`--atempo-workers`, `--crf`, `--preset`.
+options: `--voice`, `--sidebar-voice`, `--work-dir`, `--frame-hold`,
+`--offline-links`, `--store-cache`, `--speed`, `--atempo-workers`, `--crf`,
+`--preset`.
+
+### Links and previews
+
+External links (except footnotes) get a spoken sentence and a frame. The
+default is **online**: each unique URL is resolved once per book and cached
+under `<work-dir>/links/`. The adapters cover Google Docs/Sheets/Slides,
+Yandex Disk and Yandex Docs, generic PDFs, images and HTML screenshots.
+Everything else - docx, archives, video, failed fetches - stays a QR frame; a
+failure never fails the build.
+
+`--offline-links` reads only the existing per-book cache. A cache miss becomes
+a QR frame and no network request is made. Use it for an air-gapped rerun:
+
+```bash
+book2video build "/data/My Book.epub" --all \
+  --offline-links --work-dir /out/_work_book \
+  --out /out/book.mp4
+```
+
+`book2video links` is a dry run that prints the decision for every URL without
+synthesizing or rendering. Add `--work-dir` to populate a real cache, or let it
+use a temporary directory.
+
+### Cache cleanup
+
+Each build keeps its work directory, including TTS chunks, link previews,
+speed-adjusted WAVs and frame PNGs. Rerunning the same build reuses all of it.
+`book2video clean-cache --root out` lists the per-book work directories under
+`out` and removes them; add `--dry-run` to inspect and `--work-dir DIR` to
+target one. `--store-cache` is the release-time switch that keeps a successful
+build's cache once automatic cleanup is enabled.
 
 ## Voices
 
@@ -177,15 +222,20 @@ See [ADR-0004](docs/adr/0004-tera-stress-as-is.md).
 1. **Parse.** Read the EPUB spine, drop front/back matter, and extract
    headings, paragraphs, sidebars, images, tables, links and captions.
 2. **Normalize.** Expand numbers, years, dates, abbreviations and units;
-   render URLs as words; replace dashes Tera cannot pronounce.
-3. **Synthesize.** Split text into sentence-sized chunks, call Tera, cache each
+   compress URLs into a short spoken phrase; replace dashes Tera cannot
+   pronounce.
+3. **Resolve links.** Turn each unique external URL into a still preview
+   (first PDF page, first slide, first screen or image) and keep a per-book
+   cache. Failures are left as QR frames.
+4. **Synthesize.** Split text into sentence-sized chunks, call Tera, cache each
    chunk by text + voice, then apply `atempo` to the whole take.
-4. **Plan.** Build a `Segment` per narrated unit, anchor frames to segments,
-   and schedule cuts at midpoints. Tables, QR codes and blank frames are normal
-   frames with their own area of influence.
-5. **Assemble.** Concatenate segment audio with planned pauses, normalize
+5. **Plan.** Build a `Segment` per narrated unit, add the link narration and
+   annotation, anchor frames to segments, and schedule cuts with a minimum
+   hold. Tables, content previews, QR codes and blank frames are normal frames
+   with their own area of influence.
+6. **Assemble.** Concatenate segment audio with planned pauses, normalize
    loudness, and write one PCM16 WAV.
-6. **Render.** Loop each still for its exact duration, join with the ffmpeg
+7. **Render.** Loop each still for its exact duration, join with the ffmpeg
    `concat` filter, encode H.264/AAC, and attach MP4 metadata and chapters.
 
 The module map and design rationale are in
@@ -213,13 +263,14 @@ compose.yaml                caches, /data read-only, /out writable
 docker-entrypoint.sh        fixes volume ownership, drops to app user
 Makefile                    image, build, test and cleanup targets
 src/book2video/epub.py      spine, blocks, front/back matter filtering
-src/book2video/normalize.py numbers, years, abbreviations, units, URLs
-src/book2video/timeline.py  segments, anchors, midpoint scheduling, QR frames
+src/book2video/normalize.py numbers, years, abbreviations, units, spoken URLs
+src/book2video/links.py     link policy, providers, previews, per-book cache
+src/book2video/timeline.py  segments, anchors, frame scheduler, content frames
 src/book2video/audio.py     TTS orchestration, loudness, WAV assembly
 src/book2video/speed.py     ffmpeg atempo time scaling
 src/book2video/render.py    frames, ffmpeg render, metadata, chapters
 src/book2video/build.py     end-to-end orchestration
-src/book2video/cli.py       voices, say, stress, inspect, build
+src/book2video/cli.py       voices, say, stress, inspect, links, build
 src/book2video/voices.py    voice catalogue and defaults
 src/book2video/tts/tera.py  Tera backend, chunking, chunk cache
 src/book2video/images/qr.py QR frame generation with URL caption

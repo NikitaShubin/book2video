@@ -11,7 +11,8 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from .epub import Book
-from .images.qr import make_qr_frame
+from .images.qr import make_qr_frame, make_qr_image
+from .links import LinkPreview, compact_url
 from .timeline import ChapterPlan
 
 WIDTH = 1920
@@ -19,6 +20,15 @@ HEIGHT = 1080
 BACKGROUND = (255, 255, 255)
 FIGURE_MARGIN = 0.94
 TABLE_MARGIN = 0.985
+
+CONTENT_BACKGROUND = (16, 18, 22)
+CONTENT_MARGIN = 24
+CONTENT_FOOTER_H = 144
+CONTENT_RULE = (58, 64, 74)
+CONTENT_TEXT = (240, 240, 240)
+CONTENT_MUTED = (154, 160, 170)
+CONTENT_QR_SIZE = 112
+CONTENT_QR_PAD = 8
 
 _FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -41,8 +51,16 @@ def _flatten(image: Image.Image) -> Image.Image:
     return image.convert("RGB")
 
 
-def _fit(image: Image.Image, max_width: int, max_height: int) -> Image.Image:
+def _fit(
+    image: Image.Image,
+    max_width: int,
+    max_height: int,
+    *,
+    upscale: bool = True,
+) -> Image.Image:
     scale = min(max_width / image.width, max_height / image.height)
+    if not upscale:
+        scale = min(scale, 1.0)
     size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
     if size == image.size:
         return image
@@ -148,6 +166,92 @@ def _render_blank(out_path: Path) -> Path:
     return out_path
 
 
+def _ellipsize(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font,
+    max_width: int,
+) -> str:
+    if draw.textlength(text, font=font) <= max_width:
+        return text
+    # Prefer a middle ellipsis: keep the host at the start and the file name
+    # at the end, which is more recognisable than a truncated tail.
+    for keep in range(len(text) - 1, 0, -1):
+        head = keep * 3 // 5
+        tail = keep - head
+        candidate = f"{text[:head]}…{text[-tail:]}"
+        if draw.textlength(candidate, font=font) <= max_width:
+            return candidate
+    return "…"
+
+
+def _render_content(
+    preview: LinkPreview,
+    url: str,
+    out_path: Path,
+) -> Path:
+    canvas = Image.new("RGB", (WIDTH, HEIGHT), CONTENT_BACKGROUND)
+    draw = ImageDraw.Draw(canvas)
+    footer_top = HEIGHT - CONTENT_FOOTER_H
+    draw.line([(0, footer_top), (WIDTH, footer_top)], fill=CONTENT_RULE, width=1)
+
+    image = Image.open(preview.image_path)
+    image.load()
+    image = _flatten(image)
+    max_width = WIDTH - 2 * CONTENT_MARGIN
+    max_height = footer_top - 2 * CONTENT_MARGIN
+    image = _fit(image, max_width, max_height, upscale=False)
+    x = (WIDTH - image.width) // 2
+    y = CONTENT_MARGIN + (max_height - image.height) // 2
+    canvas.paste(image, (x, y))
+    draw.rectangle(
+        [x - 1, y - 1, x + image.width, y + image.height],
+        outline=(44, 48, 56),
+        width=1,
+    )
+
+    card = CONTENT_QR_SIZE + 2 * CONTENT_QR_PAD
+    card_x = WIDTH - CONTENT_MARGIN - card
+    card_y = footer_top + (CONTENT_FOOTER_H - card) // 2
+    draw.rounded_rectangle(
+        [card_x, card_y, card_x + card, card_y + card],
+        radius=14,
+        fill=(255, 255, 255),
+    )
+    qr_image = make_qr_image(url, CONTENT_QR_SIZE)
+    canvas.paste(qr_image, (card_x + CONTENT_QR_PAD, card_y + CONTENT_QR_PAD))
+
+    text_x = CONTENT_MARGIN
+    text_width = card_x - CONTENT_MARGIN - 24
+    url_font = _font(28)
+    compact = compact_url(url, 140)
+    url_text = _ellipsize(draw, compact, url_font, text_width)
+    status = preview.status
+    if status:
+        draw.text(
+            (text_x, footer_top + 40),
+            url_text,
+            font=url_font,
+            fill=CONTENT_TEXT,
+        )
+        draw.text(
+            (text_x, footer_top + 84),
+            status,
+            font=_font(22),
+            fill=CONTENT_MUTED,
+        )
+    else:
+        draw.text(
+            (text_x, footer_top + (CONTENT_FOOTER_H - 32) // 2),
+            url_text,
+            font=url_font,
+            fill=CONTENT_TEXT,
+        )
+
+    canvas.save(out_path, "PNG")
+    return out_path
+
+
 def prepare_frames(
     book: Book,
     plans: list[ChapterPlan],
@@ -165,6 +269,14 @@ def prepare_frames(
             out_path = frames_dir / f"ch{plan.chapter.index:02d}_{index:03d}.png"
             if frame.kind == "qr":
                 make_qr_frame(frame.url or "", out_path, caption=frame.url or "")
+            elif frame.kind == "content":
+                if frame.preview is None:
+                    raise ValueError(f"Frame {index} has no content preview")
+                _render_content(
+                    frame.preview,
+                    frame.url or frame.preview.url,
+                    out_path,
+                )
             elif frame.kind == "html_table":
                 _render_html_table(frame.rows, out_path)
             elif frame.kind == "blank":
@@ -386,6 +498,7 @@ def write_timeline(
                         "caption": f.caption,
                         "source": f.source,
                         "url": f.url,
+                        "preview": f.preview.as_dict() if f.preview else None,
                         "file": mapping.get(id(f)),
                     }
                     for f in plan.frames

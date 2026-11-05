@@ -1,6 +1,7 @@
 # ADR-0005: Midpoint scheduling, QR as a normal frame
 
-**Status:** accepted
+**Status:** superseded by [ADR-0009](0009-frame-timing.md) for scheduling.
+The QR-as-a-normal-frame and carry/blank rules remain in force.
 
 ## Context
 

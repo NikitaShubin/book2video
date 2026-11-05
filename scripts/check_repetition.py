@@ -8,7 +8,7 @@ ordinary speech only has short phoneme-level matches.
 
 Usage:
 
-    python scripts/check_repetition.py out/_work_book/audio/ch04_*.wav
+    python scripts/check_repetition.py out/_work_book/audio/*.wav
 """
 
 from __future__ import annotations

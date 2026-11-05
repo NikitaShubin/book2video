@@ -194,59 +194,117 @@ def normalize_for_speech(text: str) -> str:
     return text
 
 
-def spoken_url(url: str) -> str:
-    """Turn a URL into a short human-readable phrase for narration.
+_TECHNICAL_SEGMENTS = {
+    "d",
+    "edit",
+    "view",
+    "htmlview",
+    "pub",
+    "u",
+    "index",
+    "open",
+    "download",
+    "file",
+    "files",
+    "docs",
+    "document",
+    "documents",
+    "spreadsheets",
+    "presentation",
+    "presentations",
+    "forms",
+    "drive",
+    "i",
+    "s",
+    "id",
+    "apps",
+    "app",
+    "en",
+    "ru",
+    "watch",
+    "video",
+    "videos",
+    "talks",
+    "talk",
+    "status",
+    "share",
+    "sharing",
+    "uc",
+    "export",
+    "pdf",
+    "embed",
+    "amp",
+    "article",
+    "articles",
+    "news",
+    "blog",
+    "post",
+    "posts",
+    "public",
+    "publications",
+}
 
-    The domain and path are kept; query strings and fragments are dropped
-    because they are unlistenable and are already available in the QR frame.
+_EXTENSION_RE = re.compile(
+    r"\.(?:html?|php|aspx?|jsp|pdf|png|jpe?g|gif|webp|svg|zip|docx?|xlsx?|pptx?)$",
+    re.I,
+)
+_DATE_RE = re.compile(r"^(?:19|20)\d{2}(?:[-_/]\d{1,2}){0,2}$")
+_HEX_RE = re.compile(r"^[0-9a-f]{8,}$", re.I)
+_WORD_RE = re.compile(r"[^0-9a-zA-Zа-яА-ЯёЁ]+")
+_VOWEL_RE = re.compile(r"[aeiouyаеёиоуыэюя]", re.I)
+_DIGIT_RE = re.compile(r"\d")
+
+
+def _spoken_path_words(path: str) -> list[str]:
+    words: list[str] = []
+    for segment in path.split("/"):
+        segment = unquote(segment).strip()
+        if not segment:
+            continue
+        segment = _EXTENSION_RE.sub("", segment)
+        for token in _WORD_RE.split(segment):
+            token = token.strip().lower()
+            if not token or token in _TECHNICAL_SEGMENTS:
+                continue
+            if len(token) < 2 or len(token) > 24:
+                continue
+            if token.isdigit() or _DATE_RE.match(token):
+                continue
+            if _DIGIT_RE.search(token):
+                # A mixed token is almost always an identifier, not a word.
+                continue
+            if not _VOWEL_RE.search(token):
+                continue
+            if _HEX_RE.match(token):
+                continue
+            words.append(token)
+    return words
+
+
+def spoken_url(url: str) -> str:
+    """Turn a URL into a short, listenable phrase for narration.
+
+    The domain is read in full; up to four meaningful path words follow it.
+    Query strings, fragments, IDs, dates, extensions and technical segments
+    (``d``, ``edit``, ``view``, ...) are dropped: they carry no meaning for a
+    listener and the full URL is always available in the footer QR.
     """
     parsed = urlparse(url)
     host = parsed.netloc.lower()
     if host.startswith("www."):
         host = host[4:]
-    parts: list[str] = [host] if host else []
-    for segment in parsed.path.split("/"):
-        segment = unquote(segment).strip()
-        if segment:
-            parts.append(segment)
+    host = host.split("@")[-1].split(":", 1)[0]
+
+    parts: list[str] = []
+    if host:
+        parts.append(host.replace(".", " точка "))
+    words = _spoken_path_words(parsed.path)
+    if words:
+        parts.append(" ".join(words[:4]))
     if not parts:
         return "ссылка"
-
-    spoken = ", ".join(parts)
-    spoken = spoken.replace(".", " точка ")
-    spoken = spoken.replace("-", " дефис ")
-    spoken = spoken.replace("_", " подчёркивание ")
-    spoken = re.sub(r"\s+", " ", spoken).strip()
-    return spoken
+    return ", ".join(parts)
 
 
 def link_narration(url: str) -> str:
     return f"Ссылка: {spoken_url(url)}."
-
-
-def is_domain_anchor(text: str) -> bool:
-    """True when the visible link text is itself a domain (e.g. ``Mail.ru``)."""
-    return bool(re.fullmatch(r"[\w-]+(?:\.[\w-]+)+(?:/\S*)?", text.strip(), re.I))
-
-
-_DEICTIC_ANCHORS = {
-    "здесь",
-    "тут",
-    "ссылка",
-    "по ссылке",
-    "подробнее",
-    "скачать",
-    "смотреть",
-    "посмотреть",
-    "открыть",
-}
-
-
-def needs_qr(link_text: str, url: str) -> bool:
-    """Decide whether a link is a real reference worth a QR frame."""
-    anchor = link_text.strip().lower()
-    if is_domain_anchor(anchor):
-        return False
-    if anchor in _DEICTIC_ANCHORS:
-        return True
-    return len(url) > 80

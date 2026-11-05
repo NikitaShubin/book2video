@@ -1,13 +1,11 @@
-"""Narration normalisation and link/QR decisions."""
+"""Narration normalisation and spoken URLs."""
 
 from __future__ import annotations
 
 import unittest
 
 from book2video.normalize import (
-    is_domain_anchor,
     link_narration,
-    needs_qr,
     normalize_for_speech,
     spoken_url,
 )
@@ -55,28 +53,59 @@ class NormalizeTests(unittest.TestCase):
 
 
 class UrlTests(unittest.TestCase):
-    def test_spoken_url_drops_query(self) -> None:
+    def test_spoken_url_drops_query_and_reads_short_words(self) -> None:
         self.assertEqual(
             spoken_url("https://docs.yandex.ru/abc-def?utm=1#top"),
-            "docs точка yandex точка ru, abc дефис def",
+            "docs точка yandex точка ru, abc def",
         )
 
     def test_link_narration_is_a_sentence(self) -> None:
         self.assertEqual(
             link_narration("https://example.com/a"),
-            "Ссылка: example точка com, a.",
+            "Ссылка: example точка com.",
         )
 
-    def test_domain_anchor_is_not_read_as_a_link(self) -> None:
-        self.assertTrue(is_domain_anchor("Mail.ru"))
-        self.assertFalse(needs_qr("Mail.ru", "https://mail.ru"))
+    def test_google_docs_id_is_not_spoken(self) -> None:
+        self.assertEqual(
+            spoken_url(
+                "https://docs.google.com/document/d/"
+                "1AbCdEfGhIjKlMnOpQrStUvWxYz/edit"
+            ),
+            "docs точка google точка com",
+        )
 
-    def test_deictic_anchor_gets_a_qr(self) -> None:
-        self.assertTrue(needs_qr("здесь", "https://example.com/a"))
+    def test_meaningful_slug_words_are_spoken(self) -> None:
+        self.assertEqual(
+            spoken_url(
+                "https://marketplace.atlassian.com/apps/1220217/"
+                "issue-score-for-jira"
+            ),
+            "marketplace точка atlassian точка com, issue score for jira",
+        )
 
-    def test_short_named_link_does_not_get_a_qr(self) -> None:
-        self.assertFalse(needs_qr("статья", "https://example.com/a"))
-        self.assertTrue(needs_qr("статья", "https://example.com/" + "a" * 90))
+    def test_dates_and_numeric_segments_are_skipped(self) -> None:
+        self.assertEqual(
+            spoken_url("https://blog.sibirix.ru/2024/01/15/upravlenie-proektami/"),
+            "blog точка sibirix точка ru, upravlenie proektami",
+        )
+
+    def test_query_and_fragment_are_dropped(self) -> None:
+        self.assertEqual(
+            spoken_url("https://example.com/page?x=1#y"),
+            "example точка com, page",
+        )
+
+    def test_domain_only_link_is_readable(self) -> None:
+        self.assertEqual(
+            spoken_url("https://agilemanifesto.org/"),
+            "agilemanifesto точка org",
+        )
+
+    def test_long_opaque_ids_are_skipped(self) -> None:
+        self.assertEqual(
+            spoken_url("https://disk.yandex.ru/i/AbCdEf1234567890XyZ"),
+            "disk точка yandex точка ru",
+        )
 
 
 if __name__ == "__main__":

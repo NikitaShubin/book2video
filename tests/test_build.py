@@ -20,6 +20,9 @@ import soundfile as sf
 from PIL import Image
 
 from book2video.build import build
+from book2video.links import LinkPreview
+
+_LINK = "https://example.com/report"
 
 _LONG = (
     "Это достаточно длинный абзац, чтобы документ считался содержательной "
@@ -52,6 +55,7 @@ _CH1 = f"""<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"><body>
   <h1>Глава 1. Начало</h1>
   <p>{_LONG}</p>
+  <p>Подробности: <a href="{_LINK}">Итоги встречи</a>.</p>
   <div class="full_img">
     <img src="img1.png" alt=""/>
     <p class="podris">рисунок 1. Схема</p>
@@ -104,6 +108,7 @@ class BuildIntegrationTests(unittest.TestCase):
                 work_dir=work,
                 speed=1.0,
                 backend=backend,
+                link_resolver=lambda links: {},
                 log=lambda *_: None,
             )
 
@@ -136,6 +141,94 @@ class BuildIntegrationTests(unittest.TestCase):
             self.assertEqual(codecs["video"], "h264")
             self.assertEqual(codecs["audio"], "aac")
             self.assertEqual(data["chapters"][0]["tags"]["title"], "Глава 1. Начало")
+
+    def test_injected_content_preview_reaches_the_timeline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            epub = root / "book.epub"
+            out = root / "book.mp4"
+            work = root / "work"
+            _write_epub(epub)
+            preview_image = root / "preview.png"
+            Image.new("RGB", (800, 600), (245, 245, 245)).save(preview_image, "PNG")
+            preview = LinkPreview(
+                url=_LINK,
+                kind="document",
+                title="Итоги встречи",
+                page_count=3,
+                full=False,
+                image_path=preview_image,
+            )
+
+            def resolver(links):
+                self.assertIn(_LINK, links)
+                return {_LINK: preview}
+
+            build(
+                epub,
+                out,
+                work_dir=work,
+                speed=1.0,
+                frame_hold=2.0,
+                backend=FakeBackend(),
+                link_resolver=resolver,
+                log=lambda *_: None,
+            )
+
+            data = json.loads((work / "timeline.json").read_text(encoding="utf-8"))
+            frames = data[0]["frames"]
+            content = next(frame for frame in frames if frame["kind"] == "content")
+            self.assertEqual(content["preview"]["kind"], "document")
+            self.assertFalse(content["preview"]["full"])
+            self.assertTrue(Path(content["file"]).exists())
+            self.assertTrue(
+                any(segment["kind"] == "annotation" for segment in data[0]["segments"])
+            )
+            annotation = next(
+                segment
+                for segment in data[0]["segments"]
+                if segment["kind"] == "annotation"
+            )
+            self.assertEqual(annotation["voice"], "ru_f1")
+            self.assertNotIn("whisper", annotation["voice"])
+
+    def test_explicit_whisper_sidebar_voice_is_obeyed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            epub = root / "book.epub"
+            out = root / "book.mp4"
+            work = root / "work"
+            _write_epub(epub)
+            preview_image = root / "preview.png"
+            Image.new("RGB", (800, 600), (245, 245, 245)).save(preview_image, "PNG")
+            preview = LinkPreview(
+                url=_LINK,
+                kind="document",
+                title="Итоги встречи",
+                page_count=3,
+                full=False,
+                image_path=preview_image,
+            )
+
+            build(
+                epub,
+                out,
+                work_dir=work,
+                speed=1.0,
+                frame_hold=2.0,
+                sidebar_voice="eng_m2_whisper",
+                backend=FakeBackend(),
+                link_resolver=lambda links: {_LINK: preview},
+                log=lambda *_: None,
+            )
+
+            data = json.loads((work / "timeline.json").read_text(encoding="utf-8"))
+            annotation = next(
+                segment
+                for segment in data[0]["segments"]
+                if segment["kind"] == "annotation"
+            )
+            self.assertEqual(annotation["voice"], "eng_m2_whisper")
 
 
 if __name__ == "__main__":

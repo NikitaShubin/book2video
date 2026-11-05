@@ -5,6 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     HF_HOME=/models/hf \
     BOOK2VIDEO_CACHE=/cache \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     OMP_NUM_THREADS=8 \
     MKL_NUM_THREADS=8
 
@@ -14,6 +15,7 @@ RUN apt-get update \
         libsndfile1 \
         fonts-dejavu-core \
         gosu \
+        poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -28,6 +30,13 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 
 COPY src ./src
 RUN pip install --no-cache-dir .
+
+# Playwright is used only for HTML link previews.  The browser binary is
+# downloaded once into the image; builds run it with --no-sandbox because the
+# container is already the isolation boundary.
+RUN mkdir -p /ms-playwright \
+    && playwright install --with-deps chromium \
+    && chmod -R a+rX /ms-playwright
 
 RUN useradd --create-home --uid 1000 app \
     && mkdir -p /models /cache /data /out \

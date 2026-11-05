@@ -39,8 +39,11 @@ Ten voices, defined in `voices.py`:
 | `eng_m3`, `eng_m4`, `eng_f3`, `eng_f5` | male / female | en, read Russian cross-lingually |
 | `eng_m2_whisper`, `eng_f4_whisper` | male / female | en whisper, cross-lingual |
 
-Defaults: main `ru_m5`; sidebars `opposite_gender(ru_m5)` = `ru_f1`. The
-sidebar voice is used for every block parsed as a sidebar, in place.
+Defaults: main `ru_m5`; sidebars and link annotations
+`opposite_gender(ru_m5)` = `ru_f1`. The sidebar voice is used for every block
+parsed as a sidebar, in place, and for the annotation sentence after a spoken
+URL. An explicit `--sidebar-voice` is obeyed even when it is a whisper voice;
+the implicit default always prefers a native, non-whisper voice.
 
 ## Loudness
 
@@ -67,7 +70,9 @@ process-bound speed change never compete for the same resources:
    `--atempo-workers` ffmpeg processes (default `min(8, CPU count)`).
 
 Cached files are skipped in both phases, so a restart after an interruption
-resumes from the last finished segment. A thread pool is enough because each
+resumes from the last finished segment. Segment WAVs are content-addressed by
+voice and text, not by position, so adding a link sentence or a caption cannot
+silently reuse another segment's audio. A thread pool is enough because each
 worker only waits on a subprocess. Each atempo run writes `.<name>.part.wav` and
 renames it on success, so a killed build cannot leave a truncated file that a
 later run mistakes for a cache hit.
@@ -96,8 +101,12 @@ Rejected alternatives (see [ADR-0003](adr/0003-ffmpeg-atempo.md)):
 
 1. a 1.5 s chapter gap between chapters (`CHAPTER_GAP_SEC`);
 2. each segment's `pause_before`;
-3. the segment audio;
-4. `hold_after`, the extra silence needed to reach a frame's minimum hold.
+3. the segment audio.
+
+A link adds two ordinary segments: the compressed URL in the main voice and
+the annotation in the annotation voice. Frame minimums do not extend the
+audio; the frame scheduler uses the real narration length and shortens or
+stretches frames to fit it.
 
 Pauses come from `timeline._pause_before`:
 
@@ -106,7 +115,7 @@ Pauses come from `timeline._pause_before`:
 | first segment of a chapter | 0.7 s |
 | before a heading | 0.9 s |
 | after a heading | 0.55 s |
-| before/after a sidebar, caption or link | 0.5 s |
+| before/after a sidebar, caption, link or annotation | 0.5 s |
 | ordinary paragraph | 0.35 s |
 
 The result is one mono 44.1 kHz PCM16 WAV. Its duration is the video duration.
@@ -117,7 +126,9 @@ Before a full book build:
 
 1. Build one chapter and listen at 1.2× on headphones.
 2. Check that consonants survive at the fast rate and that no phrase repeats.
-3. Check tables and QR frames against the `timeline.json` timestamps.
+3. Check tables, content previews and QR frames against the `timeline.json`
+   timestamps. For a content frame, check that the footer URL is readable, the
+   mini-QR scans, and the status line appears only for partial items.
 4. Run `scripts/check_repetition.py` over the chapter WAVs if a repeat is
    suspected.
 

@@ -55,6 +55,26 @@ def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_width: int) -> list[st
     return lines or [""]
 
 
+def make_qr_image(
+    data: str,
+    size: int,
+    *,
+    error_correction: int = qrcode.constants.ERROR_CORRECT_M,
+    border: int = 4,
+) -> Image.Image:
+    """Return a square, quietly padded QR image at exactly ``size`` pixels."""
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=error_correction,
+        box_size=10,
+        border=border,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    return image.resize((size, size), Image.Resampling.NEAREST)
+
+
 def make_qr_frame(
     url: str,
     out_path: str | Path,

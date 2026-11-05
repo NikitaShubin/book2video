@@ -32,14 +32,21 @@ No model download and no network access are required.
 
 | Test | What it pins |
 | --- | --- |
-| `test_normalize` | year cases, percent/unit agreement, dashes, symbols, sentence numbers, URL speech, QR decisions |
+| `test_normalize` | year cases, percent/unit agreement, dashes, symbols, sentence numbers, compressed spoken URLs |
+| `test_links` | footer status and annotation text, footnote exclusion, compact URL, one-page/multi-page PDFs, image previews, cache reuse and offline misses |
 | `test_speed` | single-pass atempo, sub-0.5 chaining, invalid speeds, float32 output and duration, atomic `.part.wav` write on success and failure |
 | `test_audio` | two-phase cache reuse, parallel atempo overlap, worker-bound validation, speed 1.0 path |
-| `test_timeline` | first frame at chapter start, midpoint cuts, uncapped QR frames, table minimum hold, carry and blank frames |
+| `test_timeline` | first frame at chapter start, no gaps, minimum holds, equal shortening, mention preference, content vs QR frames, carry and blank frames |
 | `test_tts` | sentence chunking limits and long-sentence fallback |
 | `test_epub` | package metadata, content filtering, image+caption extraction, chapter selection |
-| `test_voices` | unique ids, defaults, opposite-gender selection, unknown voice |
-| `test_build` | full EPUB → MP4 with a fake backend: H.264/AAC, non-zero duration, chapter marker |
+| `test_voices` | unique ids, defaults, opposite-gender selection, non-whisper default, unknown voice |
+| `test_build` | full EPUB → MP4 with a fake backend and an injected preview: H.264/AAC, non-zero duration, chapter marker, content frame in `timeline.json` |
+
+The PDF tests use `pdfinfo` and `pdftoppm` from `poppler-utils`; they are
+skipped with a clear message if the tool is missing. The production image
+installs poppler and Playwright/Chromium, so both run there. `book2video links`
+is the manual network smoke test: it exercises every provider without the
+model.
 
 The integration test uses `FakeBackend`, which writes a short tone for each
 Segment. It is the seam that keeps the pipeline testable without Tera. See
@@ -66,7 +73,15 @@ Do not start a full-book build until one chapter passes this checklist.
    ```
 
    Check that the chapter list has no front/back matter, and that images,
-   tables, sidebars and captions are classified as expected.
+   tables, sidebars, captions and links are classified as expected. Then
+   resolve the links as a dry run:
+
+   ```bash
+   book2video links "/data/book.epub"
+   ```
+
+   Every non-footnote URL should appear once, with a `content` or `qr`
+   decision. A content decision should have a plausible kind and page count.
 
 2. **Build one chapter.**
 
@@ -93,10 +108,15 @@ Do not start a full-book build until one chapter passes this checklist.
 
 5. **Check frames.** Use `timeline.json` to find each frame's start and end:
    - no image before the chapter start;
-   - a cut lands in the middle of the pause between the two anchors;
-   - tables are readable and hold for at least `--table-hold`;
-   - each QR frame shows the full URL and stays as long as its area of
-     influence, with no 15-second cap;
+   - every frame holds at least `--frame-hold`, unless the chapter is too
+     short, in which case all frames are shortened equally;
+   - a cut doesn't cross a chapter boundary and the mention is inside its own
+     frame where possible;
+   - tables are readable;
+   - each link frame shows the compact URL and a scannable mini-QR, or the
+     full URL in the QR fallback;
+   - a full document has no status line, a partial one reports its page count
+     or `первый экран`;
    - a chapter without illustrations keeps the previous frame.
 
 6. **Check the tail.** Appendices are in the same file, after the last content
@@ -109,8 +129,15 @@ Do not start a full-book build until one chapter passes this checklist.
 - `book2video say "текст" --speed 1.2` — synthesis and atempo smoke test.
 - `book2video stress "текст"` — print Tera's own stress markup; confirms raw
   text is passed without pre-marking.
-- `scripts/check_repetition.py out/_work_book/audio/ch04_*.wav` — scan WAVs for
-  a repeated phrase (a Tera `duration_scale` artefact). The production path no
+- `book2video links "/data/book.epub" --json` — classify every link without
+  building; `--work-dir` keeps the previews for inspection.
+- `book2video links "/data/book.epub" --offline-links` — prove an air-gapped
+  rerun uses only the cache.
+- `book2video clean-cache --root out --dry-run` — list work caches that would be
+  removed.
+- `scripts/check_repetition.py out/_work_book/audio/*.wav` — scan WAVs for a
+  repeated phrase (a Tera `duration_scale` artefact). The production path no
   longer uses `duration_scale`, so this is a regression check.
-- `work/timeline.json` — every Segment and Frame with times and text.
+- `work/timeline.json` — every Segment and Frame with times, text and preview
+  metadata.
 - `work/frames.txt` — the exact frame plan handed to ffmpeg.

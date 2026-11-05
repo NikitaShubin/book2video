@@ -1,11 +1,14 @@
-"""End-to-end build: EPUB -> narration plan -> audio -> frames -> MP4."""
+"""End-to-end build: EPUB -> links -> narration plan -> audio -> frames -> MP4."""
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+from typing import Callable, Mapping
 
 from .audio import assemble_audio, synthesize_plans
 from .epub import Book, Chapter, load_book, select_chapter
+from .links import LinkPreview, collect_links, resolve_links
 from .render import prepare_frames, render, write_timeline
 from .timeline import (
     CHAPTER_GAP_SEC,
@@ -16,6 +19,12 @@ from .timeline import (
 )
 from .tts.tera import TeraBackend
 from .voices import DEFAULT_MAIN_VOICE, get_voice, opposite_gender
+
+# Flipped only at release.  Until then every build keeps its per-book cache,
+# even a successful one, so a re-render can reuse TTS, previews and audio.
+AUTO_CLEAN_WORK = False
+
+LinkResolver = Callable[[Mapping[str, str]], Mapping[str, LinkPreview]]
 
 
 def _select_chapters(
@@ -42,12 +51,15 @@ def build(
     work_dir: str | Path | None = None,
     provider: str = "CPUExecutionProvider",
     threads: int | None = None,
-    table_min_hold: float = 8.0,
+    frame_hold: float = 8.0,
     speed: float = 1.2,
     atempo_workers: int | None = None,
     crf: int = 20,
     preset: str = "medium",
+    offline_links: bool = False,
+    store_cache: bool = False,
     backend=None,
+    link_resolver: LinkResolver | None = None,
     log=print,
 ) -> Path:
     get_voice(voice)
@@ -55,6 +67,8 @@ def build(
     get_voice(sidebar_voice)
     if speed <= 0:
         raise ValueError("speed must be positive")
+    if frame_hold <= 0:
+        raise ValueError("frame_hold must be positive")
 
     epub_path = Path(epub_path)
     out_path = Path(out_path)
@@ -69,11 +83,30 @@ def build(
             f"Chapters: {', '.join(str(c.number or c.title) for c in chapters)}"
         )
 
+        links = collect_links(chapters)
+        if link_resolver is not None:
+            previews = dict(link_resolver(links))
+        else:
+            previews = resolve_links(
+                links.keys(),
+                work / "links",
+                offline=offline_links,
+                anchors=links,
+                log=log,
+            )
+        if links:
+            log(
+                f"Links: {len(links)} unique, {len(previews)} content preview(s), "
+                f"{len(links) - len(previews)} QR frame(s)"
+            )
+
         plans: list[ChapterPlan] = plan_chapters(
             chapters,
             voice,
             sidebar_voice,
-            table_min_hold=table_min_hold,
+            frame_hold=frame_hold,
+            resolutions=previews,
+            annotation_voice=sidebar_voice,
         )
         carry_frames(plans)
         total_segments = sum(len(p.segments) for p in plans)
@@ -83,7 +116,11 @@ def build(
         # The backend is an adapter at the synthesis seam.  Production passes
         # Tera; tests pass a fake that writes tones, so the whole pipeline can
         # be exercised without the model.
-        backend = backend or TeraBackend(provider=provider, threads=threads)
+        backend = backend or TeraBackend(
+            cache_dir=work,
+            provider=provider,
+            threads=threads,
+        )
         synthesize_plans(
             backend,
             plans,
@@ -122,6 +159,29 @@ def build(
             preset=preset,
         )
         log(f"Video: {result}")
+        _cleanup_work(work, out_path, store_cache=store_cache, log=log)
         return result
     finally:
         book.close()
+
+
+def _cleanup_work(
+    work: Path,
+    out_path: Path,
+    *,
+    store_cache: bool,
+    log,
+) -> None:
+    """Release switch: remove the per-book cache after a successful build.
+
+    Disabled during development.  When enabled, ``--store-cache`` keeps the
+    cache, and the output file is never deleted by accident if a caller puts it
+    inside the work directory.
+    """
+    if not AUTO_CLEAN_WORK or store_cache:
+        return
+    if out_path.resolve().is_relative_to(work.resolve()):
+        log("Not cleaning the work directory: the output lives inside it")
+        return
+    shutil.rmtree(work, ignore_errors=True)
+    log(f"Removed work directory: {work}")

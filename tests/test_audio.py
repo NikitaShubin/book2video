@@ -102,6 +102,47 @@ class SynthesizePlansTests(unittest.TestCase):
                 [s.audio_path for p in plans for s in p.segments],
             )
 
+    def test_plan_changes_reuse_audio_by_text_not_by_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            backend = FakeBackend()
+            first = _plans(chapters=1, segments=2)
+            synthesize_plans(
+                backend,
+                first,
+                work,
+                speed=2.0,
+                atempo_workers=2,
+                log=lambda *_: None,
+            )
+            self.assertEqual(backend.calls, 2)
+            old_paths = {s.text: s.audio_path for s in first[0].segments}
+
+            shifted = _plans(chapters=1, segments=2)
+            shifted[0].segments.insert(
+                0,
+                Segment(
+                    text="Новая вставка",
+                    voice="ru_m5",
+                    kind="link",
+                    block_index=0,
+                ),
+            )
+            synthesize_plans(
+                backend,
+                shifted,
+                work,
+                speed=2.0,
+                atempo_workers=2,
+                log=lambda *_: None,
+            )
+
+            self.assertEqual(backend.calls, 3)
+            self.assertEqual(
+                {s.text: s.audio_path for s in shifted[0].segments if s.text in old_paths},
+                old_paths,
+            )
+
     def test_atempo_runs_concurrently(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
