@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 
 from .speed import apply_speed
-from .timeline import CHAPTER_GAP_SEC, ChapterPlan
+from .timeline import CHAPTER_GAP_SEC, ChapterPlan, Segment
 
 TARGET_RMS = 0.07
 MAX_PEAK = 0.95
@@ -27,49 +29,113 @@ def _normalise(audio: np.ndarray) -> np.ndarray:
     return np.clip(audio * gain, -1.0, 1.0)
 
 
+def default_atempo_workers() -> int:
+    """Reasonable number of concurrent ffmpeg processes."""
+    return min(8, os.cpu_count() or 1)
+
+
+def _stretch_pending(
+    pending: list[tuple[Path, Path]],
+    speed: float,
+    workers: int,
+    log,
+) -> None:
+    """Apply ``atempo`` to every ``(natural, stretched)`` pair concurrently.
+
+    Workers only block on ffmpeg subprocesses, so threads are enough; a
+    process pool would add pickling cost for no gain.  Each ``apply_speed``
+    writes its own atomic ``.part.wav``, so parallel runs cannot collide.
+    """
+    if not pending:
+        return
+    log(f"Stretching {len(pending)} segment(s) at {speed:.3f}x with {workers} worker(s)")
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [
+            pool.submit(apply_speed, natural, stretched, speed)
+            for natural, stretched in pending
+        ]
+        for future in futures:
+            future.result()
+
+
 def synthesize_plans(
     backend,
     plans: list[ChapterPlan],
     work_dir: str | Path,
     *,
     speed: float = 1.2,
+    atempo_workers: int | None = None,
     log=print,
 ) -> None:
+    """Synthesize every segment and apply the speed change.
+
+    Two phases keep Tera's own threads busy only with synthesis: first all
+    missing natural WAVs are rendered sequentially, then all missing stretched
+    WAVs are produced by a pool of ffmpeg processes.  Cached files from an
+    earlier run are reused in both phases, so restarts resume cheaply.
+    """
     audio_dir = Path(work_dir) / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
     if speed <= 0:
         raise ValueError("speed must be positive")
+    if atempo_workers is None:
+        atempo_workers = default_atempo_workers()
+    if atempo_workers < 1:
+        raise ValueError("atempo_workers must be at least 1")
+
     log(f"Speed: {speed:.3f}x via ffmpeg atempo (single pass)")
+
+    entries: list[tuple[ChapterPlan, Segment, Path, Path]] = []
     total = sum(len(plan.segments) for plan in plans)
-    done = 0
-    total_audio = 0.0
     for plan in plans:
         for index, segment in enumerate(plan.segments):
-            done += 1
             stem = f"ch{plan.chapter.index:02d}_{index:04d}"
             natural_path = audio_dir / f"{stem}.wav"
-            if not natural_path.exists():
-                backend.synthesize(
-                    segment.text,
-                    voice=segment.voice,
-                    out_path=natural_path,
-                )
-            if abs(speed - 1.0) < 1e-6:
-                path = natural_path
-            else:
-                path = audio_dir / f"{stem}_s{speed:.3f}_at.wav"
-                if not path.exists():
-                    apply_speed(natural_path, path, speed)
-            info = sf.info(path)
-            segment.audio_path = str(path)
-            segment.duration = info.frames / info.samplerate
-            total_audio += segment.duration
-            log(
-                f"[{done:4d}/{total}] ch{plan.chapter.index} "
-                f"{segment.kind:9s} {segment.voice:5s} "
-                f"{segment.duration:6.1f}s  audio={total_audio/60:6.1f}min  "
-                f"{segment.text[:60]!r}"
+            stretched_path = (
+                natural_path
+                if abs(speed - 1.0) < 1e-6
+                else audio_dir / f"{stem}_s{speed:.3f}_at.wav"
             )
+            entries.append((plan, segment, natural_path, stretched_path))
+
+    missing_natural = [
+        segment
+        for _, segment, natural_path, _ in entries
+        if not natural_path.exists()
+    ]
+    if missing_natural:
+        log(f"Synthesizing {len(missing_natural)}/{total} segment(s) with Tera")
+
+    for plan, segment, natural_path, _ in entries:
+        if natural_path.exists():
+            continue
+        backend.synthesize(
+            segment.text,
+            voice=segment.voice,
+            out_path=natural_path,
+        )
+
+    pending = [
+        (natural_path, stretched_path)
+        for _, _, natural_path, stretched_path in entries
+        if natural_path != stretched_path and not stretched_path.exists()
+    ]
+    _stretch_pending(pending, speed, atempo_workers, log)
+
+    done = 0
+    total_audio = 0.0
+    for plan, segment, _, path in entries:
+        done += 1
+        info = sf.info(path)
+        segment.audio_path = str(path)
+        segment.duration = info.frames / info.samplerate
+        total_audio += segment.duration
+        log(
+            f"[{done:4d}/{total}] ch{plan.chapter.index} "
+            f"{segment.kind:9s} {segment.voice:5s} "
+            f"{segment.duration:6.1f}s  audio={total_audio/60:6.1f}min  "
+            f"{segment.text[:60]!r}"
+        )
 
 
 def assemble_audio(plans: list[ChapterPlan], out_path: str | Path) -> float:

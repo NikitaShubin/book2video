@@ -91,6 +91,7 @@ def _cmd_build(args: argparse.Namespace) -> int:
         threads=args.threads,
         table_min_hold=args.table_hold,
         speed=args.speed,
+        atempo_workers=args.atempo_workers,
         crf=args.crf,
         preset=args.preset,
     )
@@ -145,6 +146,8 @@ def build_parser() -> argparse.ArgumentParser:
                          help="minimum seconds a table stays on screen")
     p_build.add_argument("--speed", type=float, default=1.2,
                          help="speech rate multiplier (1.0 = natural, default 1.2)")
+    p_build.add_argument("--atempo-workers", type=int, default=None,
+                         help="parallel atempo processes (default: min(8, CPU count))")
     p_build.add_argument("--crf", type=int, default=20)
     p_build.add_argument("--preset", default="medium")
     p_build.set_defaults(func=_cmd_build)

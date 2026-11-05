@@ -33,7 +33,8 @@ No model download and no network access are required.
 | Test | What it pins |
 | --- | --- |
 | `test_normalize` | year cases, percent/unit agreement, dashes, symbols, sentence numbers, URL speech, QR decisions |
-| `test_speed` | single-pass atempo, sub-0.5 chaining, invalid speeds, float32 output and duration |
+| `test_speed` | single-pass atempo, sub-0.5 chaining, invalid speeds, float32 output and duration, atomic `.part.wav` write on success and failure |
+| `test_audio` | two-phase cache reuse, parallel stretch overlap, worker-bound validation, speed 1.0 path |
 | `test_timeline` | first frame at chapter start, midpoint cuts, uncapped QR frames, table minimum hold, carry and blank frames |
 | `test_tts` | sentence chunking limits and long-sentence fallback |
 | `test_epub` | package metadata, content filtering, image+caption extraction, chapter selection |

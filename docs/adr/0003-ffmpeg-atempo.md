@@ -25,12 +25,17 @@ A speed change must preserve pitch and timbre and must not eat consonants.
   once as `pcm_s16le`.
 - Do not add `aresample` or a second resampler: the stream is already
   44.1 kHz.
+- Apply the stretch to independent Segment WAVs with a bounded thread pool
+  (`--atempo-workers`, default `min(8, CPU count)`), after sequential
+  synthesis. Each worker writes `.<name>.part.wav` and renames it on success.
 - Expose only `--speed`; no `--speed-method`, no `--engine-max-speed`.
 
 ## Consequences
 
 - The rate is a post-processing concern; Tera and the cache are independent of
   it.
+- Synthesis and stretching are separate phases. A restart reuses both natural
+  and already-stretched files; only missing files are produced.
 - Timeline durations come from the stretched files, so sync is preserved.
 - The pitch result was measured on the pilot: frame-wise F0 within ~1.5 Hz of
   natural, correlation 0.998.

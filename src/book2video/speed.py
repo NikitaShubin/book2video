@@ -45,6 +45,11 @@ def _atempo_filter(speed: float) -> str:
     return ",".join(parts)
 
 
+def _part_path(dst: Path) -> Path:
+    """Temporary sibling with a ``.wav`` suffix so ffmpeg can infer the format."""
+    return dst.with_name(f".{dst.name}.part.wav")
+
+
 def apply_speed(
     src: str | Path,
     dst: str | Path,
@@ -55,6 +60,11 @@ def apply_speed(
     The output is float32 WAV so a later normalization / concatenation step
     does not quantize the signal a second time.  The final narration is
     written once, as PCM16, in :func:`book2video.audio.assemble_audio`.
+
+    The write is atomic: ffmpeg writes ``.<name>.part.wav`` and the file is
+    renamed only after a successful encode.  A killed build therefore cannot
+    leave a truncated file that a later run mistakes for a cache hit.  This
+    matters because several ``apply_speed`` calls run in parallel.
     """
     src = Path(src)
     dst = Path(dst)
@@ -63,16 +73,24 @@ def apply_speed(
     dst.parent.mkdir(parents=True, exist_ok=True)
     if abs(speed - 1.0) < 1e-6:
         if src.resolve() != dst.resolve():
-            shutil.copy2(src, dst)
+            part = _part_path(dst)
+            shutil.copy2(src, part)
+            part.replace(dst)
         return dst
 
+    part = _part_path(dst)
     command = [
         "ffmpeg", "-y", "-loglevel", "error", "-i", str(src),
         "-filter:a", _atempo_filter(speed),
         "-ar", str(SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_f32le",
-        str(dst),
+        str(part),
     ]
-    result = subprocess.run(command, text=True, capture_output=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"ffmpeg atempo failed: {result.stderr[-800:]}")
+    try:
+        result = subprocess.run(command, text=True, capture_output=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg atempo failed: {result.stderr[-800:]}")
+        part.replace(dst)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
     return dst

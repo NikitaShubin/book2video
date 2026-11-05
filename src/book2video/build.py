@@ -44,6 +44,7 @@ def build(
     threads: int | None = None,
     table_min_hold: float = 8.0,
     speed: float = 1.2,
+    atempo_workers: int | None = None,
     crf: int = 20,
     preset: str = "medium",
     backend=None,
@@ -88,6 +89,7 @@ def build(
             plans,
             work,
             speed=speed,
+            atempo_workers=atempo_workers,
             log=log,
         )
 

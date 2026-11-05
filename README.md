@@ -115,7 +115,7 @@ make clean                       # remove out/*
 
 Global options `--provider` and `--threads` control the ONNX runtime. Build
 options: `--voice`, `--sidebar-voice`, `--work-dir`, `--table-hold`, `--speed`,
-`--crf`, `--preset`.
+`--atempo-workers`, `--crf`, `--preset`.
 
 ## Voices
 
@@ -138,14 +138,19 @@ checked by ear before a full build.
 Default is **1.2×**. Tera always renders natural speech; the speed-up is
 applied afterwards with ffmpeg `atempo` (WSOLA, pitch-preserving). ffmpeg 8
 accepts a single `atempo` pass for the whole 0.5–100 range, so no filter chain
-is used. Intermediate stretched files are float32; the narration is written
-once as PCM16. Pauses are not stretched, and the timeline is built from the
-actual post-stretch durations, so audio, frames, and chapter markers stay in
-sync.
+is used. Synthesis and stretching are separate phases: Tera renders missing
+natural WAVs sequentially, then a bounded pool of ffmpeg processes stretches
+the segments that are not cached yet (`--atempo-workers`, default
+`min(8, CPU count)`). Intermediate stretched files are float32 and written
+atomically; the narration is written once as PCM16. Pauses are not stretched,
+and the timeline is built from the actual post-stretch durations, so audio,
+frames, and chapter markers stay in sync. Interrupting a build loses at most
+the segment being worked on; a restart reuses both caches.
 
 ```bash
 book2video build book.epub --all --speed 1.2     # default
 book2video build book.epub --all --speed 1.0     # natural
+book2video build book.epub --all --speed 2.0 --atempo-workers 8
 ```
 
 Two alternatives were tried and removed from the production path:

@@ -34,7 +34,8 @@ flowchart LR
     EPUB[EPUB] -->|load_book| BOOK[Book + Chapters + Blocks]
     BOOK -->|plan_chapters| PLAN[ChapterPlan list]
     PLAN -->|carry_frames| PLAN
-    PLAN -->|synthesize_plans| AUDIO[Segment WAVs + durations]
+    PLAN -->|synthesize_plans: synthesize missing| NATURAL[Natural Segment WAVs]
+    NATURAL -->|parallel apply_speed| AUDIO[Stretched Segment WAVs + durations]
     AUDIO -->|assign_audio_times| TIMED[Segments and Frames with times]
     TIMED -->|assemble_audio| WAV[narration.wav]
     TIMED -->|prepare_frames| PNG[frame PNGs]
@@ -54,7 +55,7 @@ seam, so tests can run the whole flow with a fake TTS.
 | `normalize` | `normalize_for_speech(text)`, `needs_qr`, `link_narration` | Russian number/date/unit expansion, Tera-unsafe symbols, URL decisions | `test_normalize` |
 | `timeline` | `plan_chapters`, `carry_frames`, `assign_audio_times` | Segment construction, pauses, anchors, midpoint scheduling, minimum holds, blank frames | `test_timeline` |
 | `speed` | `apply_speed(src, dst, speed)` | atempo filter construction, ffmpeg invocation, float32 intermediates | `test_speed` |
-| `audio` | `synthesize_plans(backend, plans, work)`, `assemble_audio(plans, path)` | chunk cache use, per-segment measurement, loudness normalisation, pause insertion | `test_build` |
+| `audio` | `synthesize_plans(backend, plans, work, speed, atempo_workers)`, `assemble_audio(plans, path)` | two-phase cache use, parallel atempo pool, per-segment measurement, loudness normalisation, pause insertion | `test_audio`, `test_build` |
 | `render` | `prepare_frames`, `write_timeline`, `render` | image fitting, table drawing, ffmpeg concat, metadata/chapter files | `test_build` |
 | `voices` | `TERA_VOICES`, `get_voice`, `opposite_gender` | voice catalogue and defaults | `test_voices` |
 | `tts.tera` | `TeraBackend.synthesize(text, voice, out_path)` | model loading, stress markup, sentence chunking, chunk cache | `test_tts` |
@@ -74,7 +75,8 @@ There are three real seams:
   The interface is intentionally duck-typed: no abstract base class until a
   second production backend exists.
 - **Time-stretch** — `speed.apply_speed` is the only module that knows about
-  ffmpeg's `atempo`. The rest of the pipeline sees durations.
+  ffmpeg's `atempo`. `audio` runs those calls in a thread pool; the rest of the
+  pipeline sees durations.
 - **Render** — `render.render` is the only module that composes the ffmpeg
   command line. Frame scheduling never depends on encoder details.
 
@@ -125,7 +127,7 @@ complexity, or merely move it?
 | `build` composition root | It created `TeraBackend` itself, so the whole pipeline could only be tested with the real model. | Accept an injected `backend`; tests supply a fake. Implemented in `test_build`. | Strong (done) |
 | `epub` heuristics | The heuristics are the largest and least formal part; a wrong classification silently drops a chapter. | Keep synthetic EPUB fixtures per rule (front matter, notes, appendix, image container) and add one when a real book breaks. | Worth exploring |
 | `render` command assembly | The ffmpeg command is long but lives at one adapter seam; splitting it would add shallow modules without locality. | Keep as one function; test the observable MP4 contract, not the argument list. | Not recommended |
-| `audio.synthesize_plans` | Cache lookup, speed application, duration measurement and logging share one loop. | Leave it: the loop is the unit of work and the log line is how a long build is supervised. Extracting steps would make failure recovery harder. | Not recommended |
+| `audio.synthesize_plans` | Two phases per run: sequential Tera synthesis, then a bounded pool of ffmpeg processes. | Keep the phases separate: Tera already uses its own threads, while atempo is pure subprocess waiting. Sharing one loop would keep ffmpeg idle until the last segment is synthesized. | Strong (done) |
 
 **Top recommendation:** keep `timeline` pure and keep the injected synthesis
 seam. Those two choices give the most leverage: a full build can be verified in

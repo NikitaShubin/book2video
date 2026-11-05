@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-
+from unittest import mock
 import numpy as np
 import soundfile as sf
 
-from book2video.speed import _atempo_filter, apply_speed
+from book2video.speed import _atempo_filter, _part_path, apply_speed
 
 
 def _write_tone(path: Path, seconds: float = 1.0) -> None:
@@ -56,6 +57,40 @@ class ApplySpeedTests(unittest.TestCase):
             apply_speed(src, dst, 1.0)
             self.assertTrue(dst.exists())
             self.assertAlmostEqual(sf.info(dst).duration, 0.2, delta=0.001)
+            self.assertFalse(_part_path(dst).exists())
+
+    def test_successful_encode_leaves_no_part_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src.wav"
+            dst = Path(tmp) / "dst.wav"
+            _write_tone(src, 0.2)
+
+            def fake_run(command, **kwargs):
+                Path(command[-1]).write_bytes(b"encoded")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with mock.patch("book2video.speed.subprocess.run", fake_run):
+                apply_speed(src, dst, 2.0)
+
+            self.assertEqual(dst.read_bytes(), b"encoded")
+            self.assertFalse(_part_path(dst).exists())
+
+    def test_failed_encode_removes_the_part_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src.wav"
+            dst = Path(tmp) / "dst.wav"
+            _write_tone(src, 0.2)
+
+            def fake_run(command, **kwargs):
+                Path(command[-1]).write_bytes(b"truncated")
+                return subprocess.CompletedProcess(command, 1, "", "boom")
+
+            with mock.patch("book2video.speed.subprocess.run", fake_run):
+                with self.assertRaises(RuntimeError):
+                    apply_speed(src, dst, 2.0)
+
+            self.assertFalse(dst.exists())
+            self.assertFalse(_part_path(dst).exists())
 
 
 if __name__ == "__main__":
