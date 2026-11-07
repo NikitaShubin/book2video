@@ -302,7 +302,7 @@ Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ## License and third-party notices
 
-No project license has been chosen yet; do not redistribute the source until
-one is added. The TeraTTSv2 model is **not** bundled and is used under its own
-OpenRAIL-M terms. Other components and their roles are listed in
-[THIRD_PARTY.md](THIRD_PARTY.md).
+The project source is released under the [MIT License](LICENSE). The
+TeraTTSv2 model is **not** bundled and is used under its own OpenRAIL-M terms;
+generated audio may carry additional restrictions. Other components and their
+roles are listed in [THIRD_PARTY.md](THIRD_PARTY.md).

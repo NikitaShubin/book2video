@@ -20,5 +20,6 @@ TeraTTSv2 is downloaded into the `hf-cache` volume on first use. It is not
 redistributed by this project. If you publish generated audio, check the model
 card and the OpenRAIL-M use restrictions for your case.
 
-The project itself does not yet have a `LICENSE` file. This notice is not legal
-advice and does not grant a license to the project source.
+The project source is released under the MIT License; see `LICENSE`. That
+license does not change the terms of the third-party components above. This
+notice is not legal advice.

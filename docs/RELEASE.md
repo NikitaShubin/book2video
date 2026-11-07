@@ -9,7 +9,7 @@ deliberately does not contain books or generated media.
 - `src/book2video/` — the pipeline.
 - `tests/` — 81 automated tests, including one end-to-end render.
 - `Dockerfile`, `Dockerfile.offline`, `compose.yaml`, `Makefile`.
-- `README.md`, `docs/`, `CHANGELOG.md`, `THIRD_PARTY.md`.
+- `README.md`, `docs/`, `CHANGELOG.md`, `THIRD_PARTY.md`, `LICENSE`.
 - Small scripts used for diagnostics under `scripts/`.
 
 ## What is not in the release
@@ -101,8 +101,8 @@ under `out/`; it keeps the empty directory in a checkout.
   but a first full-book build is an overnight job.
 - Preview rendering requires Playwright/Chromium and poppler, which are in the
   main image, not the offline app-only image.
-- No project license has been chosen yet. Treat the source as
-  all-rights-reserved until a `LICENSE` file is added.
+- The project source is MIT-licensed; third-party components and the TeraTTSv2
+  model keep their own terms.
 
 ## Suggested release notes
 

@@ -21,6 +21,7 @@ First early-access source release.
 - One MP4 per book with H.264/AAC, metadata and chapter markers.
 - `voices`, `say`, `stress`, `inspect`, `links`, `build` and `clean-cache`
   commands.
+- MIT license (`LICENSE`).
 - 81 automated tests, including an end-to-end build with a fake TTS backend.
 
 ### Changed
