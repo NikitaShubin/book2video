@@ -30,8 +30,11 @@ their narration.
 
 - Docker with Compose.
 - A CPU-only host is enough. No host Python, ffmpeg or CUDA is required.
-- Roughly 3 GB for the image and model cache, plus output space. A 10-hour
-  book used about 17 GB of work cache in validation.
+- Optional NVIDIA acceleration: a supported driver and the NVIDIA Container
+  Toolkit. The GPU image carries the CUDA 12.8 and cuDNN user-space libraries;
+  no host CUDA toolkit is needed.
+- Roughly 3 GB for the CPU image and model cache, plus output space. The GPU
+  image is larger. A 10-hour book used about 17 GB of work cache in validation.
 - Network access is needed for the first model download and for online link
   previews. `--offline-links` and `HF_HUB_OFFLINE=1` support air-gapped runs
   once the caches exist.
@@ -97,8 +100,10 @@ under `out/`; it keeps the empty directory in a checkout.
 - Link previews depend on public pages. Captchas, logins, dead hosts and
   unsupported file types fall back to QR frames; they never fail the build.
 - Tera's stress placement is accepted as-is; wrong stresses stay in the audio.
-- Synthesis is CPU-only and deliberately slow. The cache makes reruns cheaper
-  but a first full-book build is an overnight job.
+- Synthesis is CPU-only by default and deliberately slow. The cache makes
+  reruns cheaper but a first full-book build is an overnight job. The optional
+  GPU image accelerates synthesis and NVENC re-encoding; GPU performance is
+  environment-dependent and not part of the 0.1.0 validation record.
 - Preview rendering requires Playwright/Chromium and poppler, which are in the
   main image, not the offline app-only image.
 - The project source is MIT-licensed; third-party components and the TeraTTSv2
@@ -108,5 +113,6 @@ under `out/`; it keeps the empty directory in a checkout.
 
 > Early access 0.1.0: EPUB to narrated 1080p MP4, TeraTTSv2 on CPU, cached
 > per-segment synthesis, illustration/table/link-preview frames, QR fallback,
-> chapter markers, and bounded rendering for long books. Validated on four
+> chapter markers, and bounded rendering for long books. Optional NVIDIA CUDA
+> and NVENC acceleration with automatic CPU fallback. Validated on four
 > full-length Russian books. Books and generated media are not included.

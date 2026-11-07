@@ -11,9 +11,12 @@ form and must accept raw Russian text without a separate stress dictionary.
 
 ## Decision
 
-Use **TeraTTSv2** (`TeraSpace/TeraTTSv2`), ONNX, CPU, loaded through
-`transformers` remote code. Expose all ten built-in voices; default to `ru_m5`
-for narration and the opposite-gender native voice for sidebars.
+Use **TeraTTSv2** (`TeraSpace/TeraTTSv2`), ONNX, loaded through
+`transformers` remote code. CPU is the default execution provider; the
+optional GPU image can use CUDA with CPU fallback
+([ADR-0011](0011-nvidia-acceleration.md)). Expose all ten built-in voices;
+default to `ru_m5` for narration and the opposite-gender native voice for
+sidebars.
 
 English terms are read by the same voice. Tera's vocabulary covers A–Z, so no
 transliteration or second backend is used. Long English quotations are checked
@@ -28,3 +31,5 @@ by ear before a full build.
   ([ADR-0004](0004-tera-stress-as-is.md)).
 - The voice catalogue is a closed list of ten ids; a new backend would need a
   new adapter at the synthesis seam.
+- CPU synthesis is the portable baseline; GPU acceleration is optional and
+  must never be required to build a book.

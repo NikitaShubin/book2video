@@ -4,6 +4,29 @@ All notable changes are recorded here. The project follows a simple
 `MAJOR.MINOR.PATCH` scheme; during early access, minor versions may change
 command-line behaviour.
 
+## Unreleased
+
+### Added
+
+- Optional NVIDIA GPU acceleration. A `book2video:gpu` image uses
+  `onnxruntime-gpu` with CUDA 12.8 user-space libraries and NVENC; the default
+  CPU image is unchanged.
+- `--provider auto|cpu|cuda`, `--encoder auto|libx264|h264_nvenc`, `--no-gpu`
+  and a `doctor` command that reports ONNX providers, CUDA devices and NVENC
+  status. `auto` probes real availability and falls back to CPU.
+- `compose.gpu.yaml`, `make image-gpu`, `make doctor`, and `GPU=1`,
+  `PROVIDER`, `ENCODER`, `NO_GPU` make variables.
+- `Dockerfile.offline` can rebuild either the CPU or the GPU image through
+  `BASE_IMAGE`.
+- ADR-0011 records the NVIDIA decision.
+
+### Changed
+
+- The render chunk bound is 32 still inputs instead of 96. On a 14 GiB host,
+  96 inputs at 1080p reached 8.2 GiB RSS and were killed before encoding
+  started; 32 keeps peak memory near 3 GiB. Long books are split into more
+  parts and joined by the same concat demuxer.
+
 ## 0.1.0 - 2026-11-07
 
 First early-access source release.

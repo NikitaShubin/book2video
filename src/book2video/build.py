@@ -8,6 +8,7 @@ from typing import Callable, Mapping
 
 from .audio import assemble_audio, synthesize_plans
 from .epub import Book, Chapter, load_book, select_chapter
+from .gpu import resolve_encoder
 from .links import LinkPreview, collect_links, resolve_links
 from .render import prepare_frames, render, write_timeline
 from .timeline import (
@@ -49,13 +50,14 @@ def build(
     voice: str = DEFAULT_MAIN_VOICE,
     sidebar_voice: str | None = None,
     work_dir: str | Path | None = None,
-    provider: str = "CPUExecutionProvider",
+    provider: str = "auto",
     threads: int | None = None,
     frame_hold: float = 8.0,
     speed: float = 1.2,
     atempo_workers: int | None = None,
     crf: int = 20,
     preset: str = "medium",
+    encoder: str = "auto",
     offline_links: bool = False,
     store_cache: bool = False,
     backend=None,
@@ -120,6 +122,7 @@ def build(
             cache_dir=work,
             provider=provider,
             threads=threads,
+            log=log,
         )
         synthesize_plans(
             backend,
@@ -145,6 +148,7 @@ def build(
         mapping = prepare_frames(book, plans, work)
         log(f"Frames ready: {len(mapping)}")
 
+        encoder = resolve_encoder(encoder, log=log)
         write_timeline(plans, work / "timeline.json", mapping)
         result = render(
             plans,
@@ -157,6 +161,7 @@ def build(
             work_dir=work,
             crf=crf,
             preset=preset,
+            encoder=encoder,
         )
         log(f"Video: {result}")
         _cleanup_work(work, out_path, store_cache=store_cache, log=log)

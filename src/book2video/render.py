@@ -11,6 +11,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from .epub import Book
+from .gpu import encoder_args, resolve_encoder
 from .images.qr import make_qr_frame, make_qr_image
 from .links import LinkPreview, compact_url
 from .timeline import ChapterPlan
@@ -31,10 +32,11 @@ CONTENT_QR_SIZE = 112
 CONTENT_QR_PAD = 8
 
 # Every still image passed to the concat filter keeps a decoder and a frame
-# buffer alive.  A book with hundreds of illustrations can exhaust a 16 GiB
-# container before encoding starts, so render in bounded chunks and join the
-# encoded parts with the concat demuxer.
-MAX_RENDER_INPUTS = 96
+# buffer alive.  A book with hundreds of illustrations can exhaust a 14 GiB
+# container before encoding starts: 96 inputs at 1920x1080 measured 8.2 GiB
+# RSS and were killed by the OOM killer.  Render in bounded chunks and join the
+# encoded parts with the concat demuxer; 32 inputs stay below ~3 GiB.
+MAX_RENDER_INPUTS = 32
 
 _FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -367,8 +369,10 @@ def render(
     work_dir: str | Path,
     crf: int = 20,
     preset: str = "medium",
+    encoder: str = "auto",
 ) -> Path:
     work = Path(work_dir)
+    encoder = resolve_encoder(encoder)
     entries = _collect_entries(plans, mapping)
     if not entries:
         raise ValueError("No frames to render")
@@ -410,6 +414,7 @@ def render(
             audio_duration=audio_duration,
             crf=crf,
             preset=preset,
+            encoder=encoder,
         )
     else:
         _render_chunked(
@@ -421,6 +426,7 @@ def render(
             work=work,
             crf=crf,
             preset=preset,
+            encoder=encoder,
         )
     return out_path
 
@@ -466,6 +472,7 @@ def _render_single(
     audio_duration: float,
     crf: int,
     preset: str,
+    encoder: str,
 ) -> None:
     inputs = _frame_inputs(entries)
     audio_index = len(entries)
@@ -484,12 +491,7 @@ def _render_single(
         f"{audio_index}:a:0",
         "-map_metadata",
         str(metadata_index),
-        "-c:v",
-        "libx264",
-        "-preset",
-        preset,
-        "-crf",
-        str(crf),
+        *encoder_args(encoder, crf, preset),
         "-pix_fmt",
         "yuv420p",
         "-r",
@@ -522,6 +524,7 @@ def _render_chunked(
     work: Path,
     crf: int,
     preset: str,
+    encoder: str,
 ) -> None:
     parts_dir = work / "render-parts"
     if parts_dir.exists():
@@ -542,12 +545,7 @@ def _render_chunked(
             *_frame_inputs(chunk),
             *_concat_filter(len(chunk)),
             "-an",
-            "-c:v",
-            "libx264",
-            "-preset",
-            preset,
-            "-crf",
-            str(crf),
+            *encoder_args(encoder, crf, preset),
             "-pix_fmt",
             "yuv420p",
             "-r",

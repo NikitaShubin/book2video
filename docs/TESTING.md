@@ -28,6 +28,21 @@ cd /data/book2video && python -m unittest discover -s tests -t tests -v
 
 No model download and no network access are required.
 
+### GPU checks
+
+On a host with an NVIDIA GPU and the container toolkit:
+
+```bash
+docker compose -f compose.yaml -f compose.gpu.yaml build
+docker compose -f compose.yaml -f compose.gpu.yaml run --rm book2video doctor
+docker compose -f compose.yaml -f compose.gpu.yaml run --rm book2video \
+  --no-gpu doctor
+```
+
+`doctor` must list `CUDAExecutionProvider` and `NVENC available: yes` in the
+first case, and CPU/NVENC as decided by the fallback rules in the second. The
+tests themselves never need a GPU: device detection and the probe are mocked.
+
 ### Coverage
 
 | Test | What it pins |
@@ -37,7 +52,8 @@ No model download and no network access are required.
 | `test_speed` | single-pass atempo, sub-0.5 chaining, invalid speeds, float32 output and duration, atomic `.part.wav` write on success and failure |
 | `test_audio` | two-phase cache reuse, parallel atempo overlap, worker-bound validation, speed 1.0 path |
 | `test_timeline` | first frame at chapter start, no gaps, minimum holds, equal shortening, mention preference, content vs QR frames, carry and blank frames |
-| `test_tts` | sentence chunking limits and long-sentence fallback |
+| `test_tts` | sentence chunking limits, long-sentence fallback, provider auto/cpu/cuda resolution and error cases |
+| `test_gpu` | encoder aliases, NVENC probe fallback, explicit-encoder failure, CRF/CQ mapping |
 | `test_epub` | package metadata, content filtering, image+caption extraction, chapter selection |
 | `test_voices` | unique ids, defaults, opposite-gender selection, non-whisper default, unknown voice |
 | `test_build` | full EPUB → MP4 with a fake backend and an injected preview: H.264/AAC, non-zero duration, chapter marker, content frame in `timeline.json`, and bounded chunk rendering |

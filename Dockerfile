@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -23,11 +23,13 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 
 # TeraTTSv2 is ONNX, but it is loaded through transformers' AutoModel, which
-# needs the PyTorch backend even for inference. CPU wheel only: no CUDA.
-# Install torch before copying the source so that a source-only change does
-# not invalidate this heavy layer.
+# needs the PyTorch backend even for inference.  A CPU wheel is enough for the
+# ONNX runtime: no PyTorch CUDA build is needed on either image.
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.6.0
 
+# Install the application without onnxruntime; the CPU and GPU targets below
+# add the matching runtime package.  This keeps the CUDA libraries out of the
+# default image.
 COPY src ./src
 RUN pip install --no-cache-dir .
 
@@ -49,3 +51,18 @@ USER root
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["voices"]
+
+
+# Optional NVIDIA image.  Driver libraries are supplied by the host through
+# the NVIDIA container runtime; onnxruntime-gpu and the CUDA user-space
+# libraries come from PyPI.  Without --gpus all it falls back to CPU.
+FROM base AS gpu
+RUN pip install --no-cache-dir '.[gpu]'
+RUN python -c "import onnxruntime as ort; print('onnxruntime', ort.__version__)"
+
+
+# CPU stays the last stage so a plain `docker build .` builds the portable
+# default image.
+FROM base AS cpu
+RUN pip install --no-cache-dir '.[cpu]'
+RUN python -c "import onnxruntime as ort; print('onnxruntime', ort.__version__)"

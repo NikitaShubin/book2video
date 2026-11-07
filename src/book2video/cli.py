@@ -24,7 +24,8 @@ def _cmd_say(args: argparse.Namespace) -> int:
     from .tts.tera import TeraBackend
 
     get_voice(args.voice)  # validate early
-    backend = TeraBackend(provider=args.provider, threads=args.threads)
+    provider = "cpu" if args.no_gpu else args.provider
+    backend = TeraBackend(provider=provider, threads=args.threads, log=print)
     out = Path(args.out).expanduser()
     if abs(args.speed - 1.0) < 1e-6:
         backend.synthesize(args.text, voice=args.voice, out_path=out)
@@ -40,8 +41,28 @@ def _cmd_say(args: argparse.Namespace) -> int:
 def _cmd_stress(args: argparse.Namespace) -> int:
     from .tts.tera import TeraBackend
 
-    backend = TeraBackend(provider=args.provider, threads=args.threads)
+    provider = "cpu" if args.no_gpu else args.provider
+    backend = TeraBackend(provider=provider, threads=args.threads, log=print)
     print(backend.mark_text(args.text))
+    return 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    from .gpu import nvenc_available, resolve_encoder
+    from .tts.tera import available_providers, resolve_provider
+
+    print(f"ONNX providers: {', '.join(available_providers())}")
+    provider = "cpu" if args.no_gpu else args.provider
+    try:
+        print(f"TTS provider: {resolve_provider(provider)}")
+    except Exception as exc:
+        print(f"TTS provider: unavailable ({exc})")
+    print(f"NVENC available: {'yes' if nvenc_available() else 'no'}")
+    try:
+        encoder = "libx264" if args.no_gpu else "auto"
+        print(f"Video encoder: {resolve_encoder(encoder)}")
+    except Exception as exc:
+        print(f"Video encoder: unavailable ({exc})")
     return 0
 
 
@@ -208,13 +229,14 @@ def _cmd_build(args: argparse.Namespace) -> int:
         voice=args.voice,
         sidebar_voice=args.sidebar_voice,
         work_dir=args.work_dir,
-        provider=args.provider,
+        provider="cpu" if args.no_gpu else args.provider,
         threads=args.threads,
         frame_hold=args.frame_hold,
         speed=args.speed,
         atempo_workers=args.atempo_workers,
         crf=args.crf,
         preset=args.preset,
+        encoder="libx264" if args.no_gpu else args.encoder,
         offline_links=args.offline_links,
         store_cache=args.store_cache,
     )
@@ -226,15 +248,27 @@ def build_parser() -> argparse.ArgumentParser:
         prog="book2video",
         description="Turn Russian EPUB books into narrated MP4 videos.",
     )
-    parser.add_argument("--provider", default="CPUExecutionProvider",
-                        help="ONNX provider for TeraTTSv2 (default: CPUExecutionProvider)")
+    parser.add_argument(
+        "--provider",
+        default="auto",
+        help="ONNX provider: auto, cpu, cuda, or a full provider name "
+        "(default: auto)",
+    )
     parser.add_argument("--threads", type=int, default=None,
                         help="ONNX threads for TeraTTSv2")
+    parser.add_argument(
+        "--no-gpu",
+        action="store_true",
+        help="force CPU for TTS and video encoding, even when a GPU is available",
+    )
 
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_voices = sub.add_parser("voices", help="list available TeraTTSv2 voices")
     p_voices.set_defaults(func=_cmd_voices)
+
+    p_doctor = sub.add_parser("doctor", help="show GPU, ONNX and NVENC availability")
+    p_doctor.set_defaults(func=_cmd_doctor)
 
     p_say = sub.add_parser("say", help="synthesize a single phrase (smoke test)")
     p_say.add_argument("text")
@@ -304,6 +338,12 @@ def build_parser() -> argparse.ArgumentParser:
                          help="parallel atempo processes (default: min(8, CPU count))")
     p_build.add_argument("--crf", type=int, default=20)
     p_build.add_argument("--preset", default="medium")
+    p_build.add_argument(
+        "--encoder",
+        default="auto",
+        choices=["auto", "libx264", "h264_nvenc", "cpu", "nvenc"],
+        help="video encoder: auto, libx264 or h264_nvenc (default: auto)",
+    )
     p_build.set_defaults(func=_cmd_build)
 
     return parser

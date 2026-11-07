@@ -1,0 +1,18 @@
+# GPU override for the optional NVIDIA image.
+#
+#   docker compose -f compose.yaml -f compose.gpu.yaml build
+#   docker compose -f compose.yaml -f compose.gpu.yaml run --rm book2video ...
+#
+# The service gets all NVIDIA devices; book2video uses CUDA for TTS and NVENC
+# for video encoding only when the probe succeeds.  Otherwise it falls back to
+# CPU automatically.  Use `--no-gpu` to force CPU even when a GPU is present.
+services:
+  book2video:
+    build:
+      context: .
+      target: gpu
+    image: book2video:gpu
+    gpus: all
+    environment:
+      # NVENC needs the video driver capability in addition to compute.
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video

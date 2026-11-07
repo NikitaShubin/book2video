@@ -6,13 +6,15 @@ synchronized to the narration.
 One video per book. Only stills are shown: illustrations, tables and link
 previews; static frames, hard cuts, no subtitles, no on-screen titles. Images
 never appear before their chapter starts. Everything runs inside a container;
-the host needs Docker and nothing else.
+the host needs Docker and nothing else. An optional NVIDIA image uses CUDA for
+synthesis and NVENC for encoding when the driver is available, and falls back
+to CPU otherwise.
 
 ## What it produces
 
 - A single 1920×1080 H.264/AAC MP4 per book, with MP4 metadata and one chapter
   marker per content chapter.
-- Narration from a local TTS model (TeraTTSv2, ONNX, CPU).
+- Narration from a local TTS model (TeraTTSv2, ONNX, CPU or NVIDIA GPU).
 - Illustrations, tables and link previews anchored to the sentence that
   introduces them. Every frame stays at least `--frame-hold` seconds when the
   chapter has room; otherwise all frames are shortened equally.
@@ -50,10 +52,16 @@ still in [docs/TESTING.md](docs/TESTING.md).
 ## Requirements
 
 - Docker with Compose.
-- No CUDA, no Python, no ffmpeg on the host. The image is CPU-only.
-- Roughly 3 GB of disk for the image and model cache, plus space for output.
-  Long books need much more temporary space: the PM validation run used about
-  17 GB for caches and intermediate audio.
+- No Python or ffmpeg on the host. The default image is CPU-only.
+- Optional NVIDIA acceleration: an NVIDIA GPU, a driver supported by the
+  installed CUDA runtime, and the
+  [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/).
+  No CUDA toolkit is needed on the host; the user-space libraries live in the
+  GPU image.
+- Roughly 3 GB of disk for the CPU image and model cache, plus space for
+  output. The GPU image is larger because it carries the CUDA and cuDNN
+  runtime. Long books need much more temporary space: the PM validation run
+  used about 17 GB for caches and intermediate audio.
 - Network access for link previews (Google Docs, Yandex Disk, generic sites).
   Rendering and TTS are otherwise local; `--offline-links` avoids the network.
 - About 0.25 RTF for synthesis on a 16-core CPU: a 5-hour book takes roughly
@@ -100,6 +108,41 @@ docker compose run --rm book2video build "/data/My Book.epub" \
   --out /out/book.mp4 --work-dir /out/_work_book
 ```
 
+### NVIDIA acceleration (optional)
+
+The default image is CPU-only. To use an NVIDIA GPU, build the GPU target and
+start the container through the GPU override:
+
+```bash
+# Build book2video:gpu with onnxruntime-gpu and the CUDA user-space libraries.
+docker compose -f compose.yaml -f compose.gpu.yaml build
+
+# Check what the container actually sees.
+docker compose -f compose.yaml -f compose.gpu.yaml run --rm book2video doctor
+
+# Build with automatic GPU selection.
+docker compose -f compose.yaml -f compose.gpu.yaml run --rm book2video build \
+  "/data/My Book.epub" --all --voice ru_m5 --sidebar-voice ru_f2 \
+  --out /out/book.mp4 --work-dir /out/_work_book
+
+# Force CPU even though the GPU is available.
+docker compose -f compose.yaml -f compose.gpu.yaml run --rm book2video \
+  --no-gpu build "/data/My Book.epub" --all --out /out/book.mp4
+```
+
+With `--provider auto` (default) and `--encoder auto` (default) TTS uses the
+CUDA execution provider when the NVIDIA devices are visible and
+`onnxruntime` has CUDA, and the encoder uses NVENC only when a real one-frame
+probe encode succeeds. Any missing piece falls back to CPU. `doctor` prints
+the decisions without loading the model. `--no-gpu` forces CPU for both TTS
+and encoding; `--provider cpu` and `--encoder libx264` force one part.
+
+The GPU image needs a host driver that supports CUDA 12.8 and the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/).
+No CUDA toolkit is installed on the host. The CPU image can still use NVENC
+if it is started with `--gpus all`; TTS stays on CPU there because the CPU
+image does not carry the CUDA execution provider.
+
 Books are mounted read-only at `/data` (the parent directory of this project),
 output goes to `./out`. Model and TTS caches live in the named volumes
 `book2video_hf-cache` and `book2video_b2v-cache`, so rebuilding the image does
@@ -108,8 +151,10 @@ not re-download the model.
 `make` wraps the common cases:
 
 ```bash
-make image                       # docker compose build
+make image                       # docker compose build (CPU)
+make image-gpu                   # docker compose with the GPU override
 make voices
+make doctor                      # show ONNX/CUDA/NVENC availability
 make inspect BOOK="/data/My Book.epub"
 make pilot BOOK="/data/My Book.epub" CHAPTER=4
 make all BOOK="/data/My Book.epub" ALL_OUT=/out/book.mp4
@@ -118,11 +163,17 @@ make check                       # tests + CLI smoke check
 make clean                       # remove out/*
 ```
 
+`GPU=1 make ...` uses the GPU compose files for every target. `PROVIDER`
+(`auto`, `cpu`, `cuda`), `ENCODER` (`auto`, `libx264`, `h264_nvenc`) and
+`NO_GPU=1` are passed through to the build, for example
+`NO_GPU=1 make all BOOK=...`.
+
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
 | `book2video voices` | list the ten Tera voices |
+| `book2video doctor` | show ONNX providers, CUDA devices and NVENC status |
 | `book2video say "текст" --speed 1.2` | synthesize one phrase (smoke test) |
 | `book2video stress "текст"` | print Tera's own stress markup |
 | `book2video inspect book.epub` | list parsed chapters and counts |
@@ -134,10 +185,11 @@ make clean                       # remove out/*
 | `book2video build book.epub --all` | build every content chapter into one video |
 | `book2video clean-cache --root out` | remove per-book work directories (`--dry-run` to list) |
 
-Global options `--provider` and `--threads` control the ONNX runtime. Build
-options: `--voice`, `--sidebar-voice`, `--work-dir`, `--frame-hold`,
-`--offline-links`, `--store-cache`, `--speed`, `--atempo-workers`, `--crf`,
-`--preset`.
+Global options `--provider` (`auto`, `cpu`, `cuda` or a full ONNX provider
+name), `--threads` and `--no-gpu` control TTS hardware. Build options:
+`--voice`, `--sidebar-voice`, `--work-dir`, `--frame-hold`, `--offline-links`,
+`--store-cache`, `--speed`, `--atempo-workers`, `--crf`, `--preset`,
+`--encoder` (`auto`, `libx264` or `h264_nvenc`).
 
 ### Links and previews
 
@@ -172,7 +224,8 @@ build's cache once automatic cleanup is enabled.
 
 ## Voices
 
-Primary backend: **TeraTTSv2** (`TeraSpace/TeraTTSv2`), ONNX, CPU.
+Primary backend: **TeraTTSv2** (`TeraSpace/TeraTTSv2`), ONNX, CPU or NVIDIA
+GPU through the CUDA execution provider.
 
 All ten built-in voices are exposed; four are native Russian, six are English
 voices that read Russian cross-lingually. Use `book2video voices` for the list.
@@ -247,9 +300,10 @@ See [ADR-0004](docs/adr/0004-tera-stress-as-is.md).
 6. **Assemble.** Concatenate segment audio with planned pauses, normalize
    loudness, and write one PCM16 WAV.
 7. **Render.** Loop each still for its exact duration, join with the ffmpeg
-   `concat` filter, encode H.264/AAC, and attach MP4 metadata and chapters.
-   Books with more than 96 frames are encoded in bounded chunks and joined
-   losslessly, so a 400-frame book cannot exhaust the container's memory.
+   `concat` filter, encode H.264/AAC with x264 or NVENC, and attach MP4
+   metadata and chapters. Books with more than 32 frames are encoded in
+   bounded chunks and joined losslessly, so a 400-frame book cannot exhaust
+   the container's memory.
 
 The module map and design rationale are in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); audio details are in
@@ -271,6 +325,7 @@ conventions for reviewers are in [CODING_STANDARDS.md](CODING_STANDARDS.md).
 
 ```
 Dockerfile                  CPU image: ffmpeg, fonts, torch CPU, Tera deps
+compose.gpu.yaml            GPU override: book2video:gpu, all NVIDIA devices
 Dockerfile.offline          rebuild app code on the existing image (no network)
 compose.yaml                caches, /data read-only, /out writable
 docker-entrypoint.sh        fixes volume ownership, drops to app user
@@ -282,6 +337,7 @@ src/book2video/timeline.py  segments, anchors, frame scheduler, content frames
 src/book2video/audio.py     TTS orchestration, loudness, WAV assembly
 src/book2video/speed.py     ffmpeg atempo time scaling
 src/book2video/render.py    frames, ffmpeg render, metadata, chapters
+src/book2video/gpu.py       NVIDIA detection, NVENC probe, encoder arguments
 src/book2video/build.py     end-to-end orchestration
 src/book2video/cli.py       voices, say, stress, inspect, links, build
 src/book2video/voices.py    voice catalogue and defaults

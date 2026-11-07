@@ -11,8 +11,9 @@ even when Docker can build from a local image.
 ## Decision
 
 - The only host dependency is **Docker with Compose**.
-- The image is CPU-only and contains ffmpeg, fonts, torch CPU and Tera's
-  dependencies.
+- The default image is CPU-only and contains ffmpeg, fonts, torch CPU and
+  Tera's dependencies. An optional `book2video:gpu` target adds CUDA user-space
+  libraries and `onnxruntime-gpu`; it is never pulled into the default image.
 - The model lives in the `hf-cache` volume (`HF_HOME=/models/hf`); the chunk
   cache lives in `b2v-cache` (`BOOK2VIDEO_CACHE=/cache`).
 - `compose.yaml` passes `HF_HUB_OFFLINE` and `TRANSFORMERS_OFFLINE` through.
@@ -23,6 +24,14 @@ even when Docker can build from a local image.
   ```bash
   docker tag book2video:latest book2video:base
   docker build -f Dockerfile.offline -t book2video:latest .
+  ```
+
+  The same works for the GPU image by tagging it as the base:
+
+  ```bash
+  docker tag book2video:gpu book2video:gpu-base
+  docker build -f Dockerfile.offline \
+    --build-arg BASE_IMAGE=book2video:gpu-base -t book2video:gpu .
   ```
 
 - Books are mounted read-only at `/data`; output is `./out`.

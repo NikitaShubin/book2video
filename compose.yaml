@@ -2,6 +2,7 @@ services:
   book2video:
     build:
       context: .
+      target: cpu
     image: book2video:latest
     environment:
       HF_HOME: /models/hf

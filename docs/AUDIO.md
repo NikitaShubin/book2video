@@ -5,10 +5,19 @@ changes the rate, and one PCM16 WAV feeds the renderer.
 
 ## Synthesis
 
-Backend: **TeraTTSv2** (`TeraSpace/TeraTTSv2`), ONNX, CPU, loaded through
-`transformers` with `trust_remote_code=True`. The model ships its own Russian
-accentuation; raw text is passed to `normalize_text` and the result is used
-unchanged. See [ADR-0004](adr/0004-tera-stress-as-is.md).
+Backend: **TeraTTSv2** (`TeraSpace/TeraTTSv2`), ONNX, loaded through
+`transformers` with `trust_remote_code=True`. The default image runs it on CPU;
+the GPU image can use the CUDA execution provider. The model ships its own
+Russian accentuation; raw text is passed to `normalize_text` and the result is
+used unchanged. See [ADR-0004](adr/0004-tera-stress-as-is.md).
+
+The provider is resolved before the model loads. `auto` selects
+`CUDAExecutionProvider` when NVIDIA devices are mounted and this
+`onnxruntime` build exposes CUDA; otherwise it selects `CPUExecutionProvider`.
+If CUDA setup or model loading then fails under `auto`, the backend logs the
+reason and retries on CPU. An explicit `--provider cuda` fails instead of
+falling back; `--provider cpu` and `--no-gpu` force CPU even when a GPU is
+present. See [ADR-0011](adr/0011-nvidia-acceleration.md).
 
 Tera treats bare `<` and `>` as language-tag delimiters. Normalization replaces
 them with «меньше» and «больше» before synthesis, so a comparison such as
@@ -25,7 +34,9 @@ the cache useful granularity.
 Each chunk is written to `$BOOK2VIDEO_CACHE/tts/<sha256>.wav` (`/cache/tts` in
 the container). The key includes the model id, voice and Tera's marked text.
 Changing the text, voice or model creates new entries; re-rendering the same
-book reuses everything. The cache is safe to delete.
+book reuses everything. The key does not include the execution provider, so a
+cache filled on CPU is reused on CUDA and vice versa. The cache is safe to
+delete.
 
 ### Voices
 

@@ -18,11 +18,78 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from ..gpu import nvidia_devices_visible
+
 MODEL_ID = "TeraSpace/TeraTTSv2"
 SAMPLE_RATE = 44_100
 DEFAULT_PAUSE_SEC = 0.18
 
+_PROVIDER_ALIASES = {
+    "auto": None,
+    "cpu": "CPUExecutionProvider",
+    "cuda": "CUDAExecutionProvider",
+}
+
 _SENTENCE_RE = re.compile(r"[^.!?…]+[.!?…]*", re.UNICODE)
+
+
+def available_providers() -> tuple[str, ...]:
+    """Return the ONNX Runtime execution providers in this image."""
+    import onnxruntime as ort
+
+    return tuple(ort.get_available_providers())
+
+
+def resolve_provider(requested: str = "auto", *, log=None) -> str:
+    """Resolve ``auto``/``cpu``/``cuda`` to an ONNX execution provider.
+
+    ``auto`` uses CUDA only when the NVIDIA devices are mounted and this
+    onnxruntime build has the CUDA provider.  The loaded model is still allowed
+    to fall back to CPU if session creation fails, which handles a missing
+    driver library.  Explicit ``cuda`` never falls back silently.
+    """
+    key = (requested or "auto").lower()
+    if key not in _PROVIDER_ALIASES:
+        resolved = requested
+        if resolved not in available_providers():
+            raise ValueError(
+                f"Unknown ONNX provider {requested!r}. Available: "
+                f"{', '.join(available_providers())}"
+            )
+        return resolved
+
+    resolved = _PROVIDER_ALIASES[key]
+    if resolved is None:
+        if not nvidia_devices_visible():
+            if log:
+                log("TTS provider: CPUExecutionProvider (no NVIDIA device)")
+            return "CPUExecutionProvider"
+        if "CUDAExecutionProvider" not in available_providers():
+            if log:
+                log("TTS provider: CPUExecutionProvider (no CUDA in onnxruntime)")
+            return "CPUExecutionProvider"
+        if log:
+            log("TTS provider: CUDAExecutionProvider")
+        return "CUDAExecutionProvider"
+
+    if resolved not in available_providers():
+        hint = (
+            " This image has the CPU onnxruntime; build the GPU image."
+            if resolved == "CUDAExecutionProvider"
+            else ""
+        )
+        raise RuntimeError(
+            f"ONNX provider {resolved} is not available. Available: "
+            f"{', '.join(available_providers())}.{hint}"
+        )
+    if resolved == "CUDAExecutionProvider" and not nvidia_devices_visible():
+        raise RuntimeError(
+            "CUDA was requested, but no NVIDIA device is exposed to the "
+            "container. Start it with --gpus all, or use --no-gpu."
+        )
+    if log:
+        log(f"TTS provider: {resolved}")
+    return resolved
 
 
 def split_sentences(text: str, max_chars: int = 350) -> list[str]:
@@ -65,12 +132,15 @@ class TeraBackend:
     def __init__(
         self,
         cache_dir: str | Path | None = None,
-        provider: str = "CPUExecutionProvider",
+        provider: str = "auto",
         threads: int | None = None,
         model_id: str = MODEL_ID,
+        log=None,
     ) -> None:
         self.model_id = model_id
-        self.provider = provider
+        self._auto_provider = (provider or "auto").lower() == "auto"
+        self._log = log or (lambda *_: None)
+        self.provider = resolve_provider(provider, log=self._log)
         self.threads = threads or min(16, os.cpu_count() or 8)
         default_cache = Path(os.environ.get("BOOK2VIDEO_CACHE", "~/.cache/book2video"))
         self.cache_dir = Path(cache_dir or default_cache).expanduser() / "tts"
@@ -80,15 +150,47 @@ class TeraBackend:
     @property
     def model(self):
         if self._model is None:
-            from transformers import AutoModel
+            self._model = self._load_model(self.provider)
+        return self._model
 
-            self._model = AutoModel.from_pretrained(
+    def _load_model(self, provider: str):
+        if provider == "CUDAExecutionProvider":
+            try:
+                self._prepare_cuda()
+            except Exception as exc:
+                if not self._auto_provider:
+                    raise RuntimeError(
+                        f"CUDA is exposed, but onnxruntime could not load its "
+                        f"libraries: {exc}"
+                    ) from exc
+                self._log(f"GPU: CUDA setup failed ({exc}); falling back to CPU")
+                self.provider = "CPUExecutionProvider"
+                return self._load_model(self.provider)
+
+        from transformers import AutoModel
+
+        try:
+            return AutoModel.from_pretrained(
                 self.model_id,
                 trust_remote_code=True,
-                provider=self.provider,
+                provider=provider,
                 threads=self.threads,
+                ruaccent_device="CUDA" if provider == "CUDAExecutionProvider" else "CPU",
             )
-        return self._model
+        except Exception as exc:
+            if not self._auto_provider or provider != "CUDAExecutionProvider":
+                raise
+            self._log(f"GPU: CUDA model load failed ({exc}); falling back to CPU")
+            self.provider = "CPUExecutionProvider"
+            return self._load_model(self.provider)
+
+    @staticmethod
+    def _prepare_cuda() -> None:
+        import onnxruntime as ort
+
+        preload = getattr(ort, "preload_dlls", None)
+        if preload is not None:
+            preload()
 
     def mark_text(self, text: str) -> str:
         """Return Tera's own stress markup, unchanged.

@@ -1,13 +1,21 @@
 # Rebuild the application code on top of the existing image when the network
 # is unavailable.  The base image already contains torch, transformers, Tera
-# and every other dependency; only the pure-Python package changed, so copying
-# it into site-packages is enough.  This avoids re-downloading torch.
+# and the selected onnxruntime variant; only the pure-Python package changed,
+# so copying it into site-packages is enough.  This avoids re-downloading the
+# runtime or CUDA libraries.
 #
 #   docker tag book2video:latest book2video:base
 #   docker build -f Dockerfile.offline -t book2video:latest .
 #
+# For the GPU image:
+#
+#   docker tag book2video:gpu book2video:gpu-base
+#   docker build -f Dockerfile.offline \
+#       --build-arg BASE_IMAGE=book2video:gpu-base -t book2video:gpu .
+#
 # For a normal online rebuild use the main Dockerfile instead.
-FROM book2video:base
+ARG BASE_IMAGE=book2video:base
+FROM ${BASE_IMAGE}
 
 USER root
 

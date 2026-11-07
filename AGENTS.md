@@ -12,6 +12,8 @@
   manual chapter gate before a full-book build.
 - [docs/RELEASE.md](docs/RELEASE.md) — release scope, artifact contents,
   validation record and the media-exclusion checklist.
+- [docs/adr/0011-nvidia-acceleration.md](docs/adr/0011-nvidia-acceleration.md)
+  — optional CUDA/NVENC path and its CPU fallback.
 - [CHANGELOG.md](CHANGELOG.md) — user-visible changes per version.
 - [docs/adr/](docs/adr/) — accepted decisions. Do not re-litigate one without
   saying so.
@@ -23,6 +25,8 @@ Commands:
 make test       # unit + integration tests in the container
 make check      # tests + CLI help
 make image      # rebuild after changing src/
+make image-gpu  # rebuild the optional NVIDIA image
+make doctor     # show CUDA/NVENC availability inside the container
 make inspect BOOK="/data/book.epub"
 make pilot BOOK="/data/book.epub" CHAPTER=4
 ```
