@@ -10,6 +10,9 @@
 - [docs/AUDIO.md](docs/AUDIO.md) — TTS, cache, loudness, atempo and assembly.
 - [docs/TESTING.md](docs/TESTING.md) — `make test`, the fake backend, and the
   manual chapter gate before a full-book build.
+- [docs/RELEASE.md](docs/RELEASE.md) — release scope, artifact contents,
+  validation record and the media-exclusion checklist.
+- [CHANGELOG.md](CHANGELOG.md) — user-visible changes per version.
 - [docs/adr/](docs/adr/) — accepted decisions. Do not re-litigate one without
   saying so.
 - [CODING_STANDARDS.md](CODING_STANDARDS.md) — review judgement calls.
