@@ -15,3 +15,4 @@ explicitly and write a new ADR that supersedes it.
 | [0007](0007-content-filtering.md) | Heuristic, EPUB-specific front/back-matter filtering |
 | [0008](0008-link-previews.md) | Link previews replace QR when renderable; QR is the fallback |
 | [0009](0009-frame-timing.md) | Minimum frame hold, equal shortening, mention preference |
+| [0010](0010-sidebar-voice.md) | Lower-pitch native `ru_f2` for sidebars and annotations |

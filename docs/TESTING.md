@@ -40,7 +40,7 @@ No model download and no network access are required.
 | `test_tts` | sentence chunking limits and long-sentence fallback |
 | `test_epub` | package metadata, content filtering, image+caption extraction, chapter selection |
 | `test_voices` | unique ids, defaults, opposite-gender selection, non-whisper default, unknown voice |
-| `test_build` | full EPUB → MP4 with a fake backend and an injected preview: H.264/AAC, non-zero duration, chapter marker, content frame in `timeline.json` |
+| `test_build` | full EPUB → MP4 with a fake backend and an injected preview: H.264/AAC, non-zero duration, chapter marker, content frame in `timeline.json`, and bounded chunk rendering |
 
 The PDF tests use `pdfinfo` and `pdftoppm` from `poppler-utils`; they are
 skipped with a clear message if the tool is missing. The production image
@@ -141,3 +141,13 @@ Do not start a full-book build until one chapter passes this checklist.
 - `work/timeline.json` — every Segment and Frame with times, text and preview
   metadata.
 - `work/frames.txt` — the exact frame plan handed to ffmpeg.
+
+## Full-book validation record
+
+The 0.1.0 release was validated on four complete books, not only a pilot
+chapter. The durations, frame counts, chapter counts and A/V deltas are in
+[docs/RELEASE.md](RELEASE.md). One of those books has 416 frames and 149
+chapters; it is the regression case for the bounded chunk renderer. A synthetic
+version of the same path is covered by
+`test_build.test_many_frames_are_rendered_in_chunks`, so the OOM regression is
+caught without a copyrighted fixture.

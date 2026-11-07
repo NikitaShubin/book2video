@@ -28,24 +28,32 @@ defined in [docs/GLOSSARY.md](docs/GLOSSARY.md).
 
 ## Status
 
-The pipeline works end to end and has been validated on *Как приготовить
-проект* by Егор Ганин, chapter 4 «Аналитика»:
+Early access, version **0.1.0**. The pipeline works end to end and has been
+validated on four full-length Russian books, not just a pilot chapter:
 
-| Run | Duration | Frames | Sync |
-| --- | --- | --- | --- |
-| natural speed | 22.8 min | 8 | audio/video within 0.01 s |
-| default 1.2× | 19.2 min | 8 | audio/video within 0.01 s |
+| Validation book | Output | Frames | Chapters | A/V delta |
+| --- | ---: | ---: | ---: | ---: |
+| *Как приготовить проект* | 175.8 min | 86 | 10 | 0.013 s |
+| *Scrum на практике* | 220.6 min | 12 | 10 | 0.033 s |
+| *Scrum. Революция* | 257.2 min | 31 | 24 | 0.013 s |
+| *Настольная книга project-менеджера* | 597.5 min | 416 | 149 | 0.008 s |
 
-Both runs had the correct chapter marker and both QR frames in place. The same
-chapter has not yet been accepted for a full-book build; a full book is built
-only after one chapter passes the listening check in
-[docs/TESTING.md](docs/TESTING.md).
+All four were rendered at 2.0× with link previews, QR fallbacks, chapter
+markers and the chunked renderer used for long books. The copyright holders'
+EPUBs, narration and MP4 files are **not** part of the release; only the
+pipeline and this documentation are.
+
+The release scope, artifact contents and known limitations are in
+[docs/RELEASE.md](docs/RELEASE.md). The manual chapter acceptance procedure is
+still in [docs/TESTING.md](docs/TESTING.md).
 
 ## Requirements
 
 - Docker with Compose.
 - No CUDA, no Python, no ffmpeg on the host. The image is CPU-only.
 - Roughly 3 GB of disk for the image and model cache, plus space for output.
+  Long books need much more temporary space: the PM validation run used about
+  17 GB for caches and intermediate audio.
 - Network access for link previews (Google Docs, Yandex Disk, generic sites).
   Rendering and TTS are otherwise local; `--offline-links` avoids the network.
 - About 0.25 RTF for synthesis on a 16-core CPU: a 5-hour book takes roughly
@@ -83,12 +91,12 @@ docker compose run --rm book2video links "/data/My Book.epub"
 
 # Render one chapter as a pilot.
 docker compose run --rm book2video build "/data/My Book.epub" \
-  --chapter 4 --voice ru_m5 --sidebar-voice ru_f1 \
+  --chapter 4 --voice ru_m5 --sidebar-voice ru_f2 \
   --out /out/pilot.mp4 --work-dir /out/_work_pilot
 
 # Render the whole book into one file.
 docker compose run --rm book2video build "/data/My Book.epub" \
-  --all --voice ru_m5 --sidebar-voice ru_f1 \
+  --all --voice ru_m5 --sidebar-voice ru_f2 \
   --out /out/book.mp4 --work-dir /out/_work_book
 ```
 
@@ -171,9 +179,12 @@ voices that read Russian cross-lingually. Use `book2video voices` for the list.
 The defaults are:
 
 - main narration: `ru_m5` (male)
-- sidebars and boxes: the opposite-gender native voice (`ru_f1` for `ru_m5`)
+- sidebars and boxes: the opposite-gender native voice (`ru_f2` for `ru_m5`).
+  `ru_f2` is used instead of the authors' recommended `ru_f1` because it has a
+  lower pitch and sounds less shrill next to `ru_m5`; see
+  [ADR-0010](docs/adr/0010-sidebar-voice.md)
 
-Both are CLI options; nothing is hard-coded to one voice. English terms are
+Both are CLI options; the defaults can be overridden per run. English terms are
 read by the same voice, because Tera's vocabulary covers A–Z. No
 transliteration or separate English TTS is used; long English quotations are
 checked by ear before a full build.
@@ -237,6 +248,8 @@ See [ADR-0004](docs/adr/0004-tera-stress-as-is.md).
    loudness, and write one PCM16 WAV.
 7. **Render.** Loop each still for its exact duration, join with the ffmpeg
    `concat` filter, encode H.264/AAC, and attach MP4 metadata and chapters.
+   Books with more than 96 frames are encoded in bounded chunks and joined
+   losslessly, so a 400-frame book cannot exhaust the container's memory.
 
 The module map and design rationale are in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); audio details are in
@@ -278,3 +291,18 @@ tests/                      unit tests (stdlib unittest)
 scripts/check_repetition.py optional Tera repeat diagnostic
 docs/                       architecture, glossary, audio, testing, ADRs
 ```
+
+## Release
+
+Version 0.1.0 is the first early-access release. It is a source release: the
+repository, container definitions and documentation only. No EPUB, MP4, WAV,
+frame, cache or model file is included. See [docs/RELEASE.md](docs/RELEASE.md)
+for the artifact checklist, validation commands and known limitations.
+Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+
+## License and third-party notices
+
+No project license has been chosen yet; do not redistribute the source until
+one is added. The TeraTTSv2 model is **not** bundled and is used under its own
+OpenRAIL-M terms. Other components and their roles are listed in
+[THIRD_PARTY.md](THIRD_PARTY.md).

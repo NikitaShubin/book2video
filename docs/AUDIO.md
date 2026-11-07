@@ -34,16 +34,20 @@ Ten voices, defined in `voices.py`:
 | id | gender | language |
 | --- | --- | --- |
 | `ru_m5` | male | ru (recommended by the model authors) |
-| `ru_f1` | female | ru (recommended by the model authors) |
-| `ru_m1`, `ru_f2` | male / female | ru |
+| `ru_f1` | female | ru (recommended by the model authors, high pitch) |
+| `ru_f2` | female | ru (lower pitch; default sidebar voice) |
+| `ru_m1` | male | ru |
 | `eng_m3`, `eng_m4`, `eng_f3`, `eng_f5` | male / female | en, read Russian cross-lingually |
 | `eng_m2_whisper`, `eng_f4_whisper` | male / female | en whisper, cross-lingual |
 
 Defaults: main `ru_m5`; sidebars and link annotations
-`opposite_gender(ru_m5)` = `ru_f1`. The sidebar voice is used for every block
-parsed as a sidebar, in place, and for the annotation sentence after a spoken
-URL. An explicit `--sidebar-voice` is obeyed even when it is a whisper voice;
-the implicit default always prefers a native, non-whisper voice.
+`opposite_gender(ru_m5)` = `ru_f2`. `ru_f1` is the authors' recommended voice,
+but its median F0 is roughly 278 Hz against 206 Hz for `ru_f2`; on long
+listening tests it sounds shrill next to the male narrator. See
+[ADR-0010](adr/0010-sidebar-voice.md). The sidebar voice is used for every
+block parsed as a sidebar, in place, and for the annotation sentence after a
+spoken URL. An explicit `--sidebar-voice` is obeyed even when it is a whisper
+voice; the implicit default always prefers a native, non-whisper voice.
 
 ## Loudness
 

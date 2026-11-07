@@ -92,7 +92,10 @@ There are four real seams:
   injected `link_resolver` lets tests supply previews without network access.
   A resolver returns `{url: LinkPreview}`; missing URLs stay QR frames.
 - **Render** — `render.render` is the only module that composes the ffmpeg
-  command line. Frame scheduling never depends on encoder details.
+  command line. Frame scheduling never depends on encoder details. Short books
+  use one concat-filter pass; books above 96 frames are encoded in bounded
+  chunks and joined by the concat demuxer, which keeps memory flat for
+  illustrations-heavy books.
 
 `Book.read(resource)` is the adapter between the EPUB archive and frame
 preparation; it keeps ZIP access out of `render`.
@@ -181,7 +184,7 @@ complexity, or merely move it?
 | --- | --- | --- | --- |
 | `build` composition root | It created `TeraBackend` itself, so the whole pipeline could only be tested with the real model. | Accept an injected `backend`; tests supply a fake. Implemented in `test_build`. | Strong (done) |
 | `epub` heuristics | The heuristics are the largest and least formal part; a wrong classification silently drops a chapter. | Keep synthetic EPUB fixtures per rule (front matter, notes, appendix, image container) and add one when a real book breaks. | Worth exploring |
-| `render` command assembly | The ffmpeg command is long but lives at one adapter seam; splitting it would add shallow modules without locality. | Keep as one function; test the observable MP4 contract, not the argument list. | Not recommended |
+| `render` chunking | Hundreds of still-image inputs exhausted the container's memory before encoding started. | Bound the number of inputs per ffmpeg pass and join the encoded parts with the concat demuxer; keep the observable MP4 contract. Implemented after the 416-frame book was killed by the OOM killer. | Strong (done) |
 | `audio.synthesize_plans` | Two phases per run: sequential Tera synthesis, then a bounded pool of ffmpeg processes. | Keep the phases separate: Tera already uses its own threads, while atempo is pure subprocess waiting. Sharing one loop would keep ffmpeg idle until the last segment is synthesized. | Strong (done) |
 
 **Top recommendation:** keep `timeline` pure and keep the injected synthesis

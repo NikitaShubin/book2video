@@ -242,7 +242,7 @@ class BuildIntegrationTests(unittest.TestCase):
                 for segment in data[0]["segments"]
                 if segment["kind"] == "annotation"
             )
-            self.assertEqual(annotation["voice"], "ru_f1")
+            self.assertEqual(annotation["voice"], "ru_f2")
             self.assertNotIn("whisper", annotation["voice"])
 
     def test_explicit_whisper_sidebar_voice_is_obeyed(self) -> None:

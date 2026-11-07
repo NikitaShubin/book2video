@@ -34,7 +34,17 @@ TERA_VOICES: tuple[Voice, ...] = (
 VOICE_IDS = tuple(v.id for v in TERA_VOICES)
 
 DEFAULT_MAIN_VOICE = "ru_m5"
-DEFAULT_SIDEBAR_VOICE = "ru_f1"
+# ru_f1 is the model authors' recommended female voice, but its median F0 is
+# around 278 Hz and it reads as shrill next to ru_m5.  ru_f2 is native Russian
+# and about 25% lower, so it is the default sidebar/annotation voice.
+DEFAULT_SIDEBAR_VOICE = "ru_f2"
+
+# Preference order for the implicit opposite-gender voice.  Native Russian
+# first, then non-whisper English voices that read Russian cross-lingually.
+_OPPOSITE_PREFERENCE = {
+    "f": ("ru_f2", "ru_f1", "eng_f3", "eng_f5"),
+    "m": ("ru_m5", "ru_m1", "eng_m3", "eng_m4"),
+}
 
 
 def get_voice(voice_id: str) -> Voice:
@@ -50,11 +60,7 @@ def opposite_gender(voice_id: str) -> str:
     """Return a sensible default sidebar voice of the opposite gender."""
     voice = get_voice(voice_id)
     want = "f" if voice.gender == "m" else "m"
-    # Prefer native Russian voices, then English cross-lingual ones.
-    for candidate in TERA_VOICES:
-        if candidate.gender == want and candidate.language == "ru":
-            return candidate.id
-    for candidate in TERA_VOICES:
-        if candidate.gender == want:
-            return candidate.id
+    for candidate in _OPPOSITE_PREFERENCE[want]:
+        if candidate in VOICE_IDS:
+            return candidate
     return DEFAULT_SIDEBAR_VOICE

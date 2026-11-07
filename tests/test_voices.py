@@ -28,8 +28,12 @@ class VoiceTests(unittest.TestCase):
             self.assertNotIn("whisper", opposite_gender(voice_id))
 
     def test_opposite_gender_prefers_native_russian(self) -> None:
-        self.assertEqual(opposite_gender("ru_m5"), "ru_f1")
-        self.assertEqual(opposite_gender("ru_f1"), "ru_m1")
+        self.assertEqual(opposite_gender("ru_m5"), "ru_f2")
+        self.assertEqual(opposite_gender("ru_f2"), "ru_m5")
+
+    def test_default_sidebar_is_the_lower_female_voice(self) -> None:
+        self.assertEqual(DEFAULT_SIDEBAR_VOICE, "ru_f2")
+        self.assertEqual(opposite_gender(DEFAULT_MAIN_VOICE), "ru_f2")
 
     def test_unknown_voice_is_rejected(self) -> None:
         with self.assertRaises(KeyError):
