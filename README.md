@@ -30,15 +30,15 @@ defined in [docs/GLOSSARY.md](docs/GLOSSARY.md).
 
 ## Status
 
-Early access, version **0.1.0**. The pipeline works end to end and has been
+Early access, version **0.2.0**. The pipeline works end to end and has been
 validated on four full-length Russian books, not just a pilot chapter:
 
 | Validation book | Output | Frames | Chapters | A/V delta |
 | --- | ---: | ---: | ---: | ---: |
-| *Как приготовить проект* | 175.8 min | 86 | 10 | 0.013 s |
-| *Scrum на практике* | 220.6 min | 12 | 10 | 0.033 s |
-| *Scrum. Революция* | 257.2 min | 31 | 24 | 0.013 s |
-| *Настольная книга project-менеджера* | 597.5 min | 416 | 149 | 0.008 s |
+| *Как приготовить проект* | 175.6 min | 86 | 10 | 0.001 s |
+| *Scrum на практике* | 220.6 min | 12 | 10 | 0.001 s |
+| *Scrum. Революция* | 257.2 min | 31 | 24 | 0.001 s |
+| *Настольная книга project-менеджера* | 597.5 min | 416 | 149 | 0.001 s |
 
 All four were rendered at 2.0× with link previews, QR fallbacks, chapter
 markers and the chunked renderer used for long books. The copyright holders'
@@ -355,11 +355,13 @@ docs/                       architecture, glossary, audio, testing, ADRs
 
 ## Release
 
-Version 0.1.0 is the first early-access release. It is a source release: the
-repository, container definitions and documentation only. No EPUB, MP4, WAV,
-frame, cache or model file is included. See [docs/RELEASE.md](docs/RELEASE.md)
-for the artifact checklist, validation commands and known limitations.
-Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+Version 0.2.0 is the second early-access release. It adds optional NVIDIA
+CUDA/NVENC acceleration with automatic CPU fallback and resumable chunked
+rendering. It is a source release: the repository, container definitions and
+documentation only. No EPUB, MP4, WAV, frame, cache or model file is included.
+See [docs/RELEASE.md](docs/RELEASE.md) for the artifact checklist, validation
+commands and known limitations. Changes are recorded in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## License and third-party notices
 

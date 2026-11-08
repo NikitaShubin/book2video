@@ -1,14 +1,16 @@
-# Release 0.1.0
+# Release 0.2.0
 
-This is the first early-access release of `book2video`. It is a **source
-release**: the pipeline, container definitions, tests and documentation. It
-deliberately does not contain books or generated media.
+This is the second early-access release of `book2video`. It adds optional
+NVIDIA acceleration and resumable rendering. It is a **source release**: the
+pipeline, container definitions, tests and documentation. It deliberately does
+not contain books or generated media.
 
 ## What is in the release
 
 - `src/book2video/` — the pipeline.
-- `tests/` — 81 automated tests, including one end-to-end render.
-- `Dockerfile`, `Dockerfile.offline`, `compose.yaml`, `Makefile`.
+- `tests/` — 98 automated tests, including one end-to-end render.
+- `Dockerfile`, `Dockerfile.offline`, `compose.yaml`, `compose.gpu.yaml`,
+  `Makefile`.
 - `README.md`, `docs/`, `CHANGELOG.md`, `THIRD_PARTY.md`, `LICENSE`.
 - Small scripts used for diagnostics under `scripts/`.
 
@@ -47,10 +49,10 @@ audio/video delta:
 
 | Book | Duration | Frames | Chapters | A/V delta |
 | --- | ---: | ---: | ---: | ---: |
-| *Как приготовить проект* | 175.8 min | 86 | 10 | 0.013 s |
-| *Scrum на практике* | 220.6 min | 12 | 10 | 0.033 s |
-| *Scrum. Революция* | 257.2 min | 31 | 24 | 0.013 s |
-| *Настольная книга project-менеджера* | 597.5 min | 416 | 149 | 0.008 s |
+| *Как приготовить проект* | 175.6 min | 86 | 10 | 0.001 s |
+| *Scrum на практике* | 220.6 min | 12 | 10 | 0.001 s |
+| *Scrum. Революция* | 257.2 min | 31 | 24 | 0.001 s |
+| *Настольная книга project-менеджера* | 597.5 min | 416 | 149 | 0.001 s |
 
 A representative run:
 
@@ -84,9 +86,9 @@ fixture.
 
 ```bash
 git archive --format=tar.gz \
-  --prefix=book2video-0.1.0/ \
-  -o /tmp/book2video-0.1.0.tar.gz v0.1.0
-tar -tzf /tmp/book2video-0.1.0.tar.gz | sort
+  --prefix=book2video-0.2.0/ \
+  -o /tmp/book2video-0.2.0.tar.gz v0.2.0
+tar -tzf /tmp/book2video-0.2.0.tar.gz | sort
 ```
 
 The archive must contain no `.epub`, `.mp4`, `.wav`, `.onnx`, generated `out/`
@@ -102,8 +104,9 @@ under `out/`; it keeps the empty directory in a checkout.
 - Tera's stress placement is accepted as-is; wrong stresses stay in the audio.
 - Synthesis is CPU-only by default and deliberately slow. The cache makes
   reruns cheaper but a first full-book build is an overnight job. The optional
-  GPU image accelerates synthesis and NVENC re-encoding; GPU performance is
-  environment-dependent and not part of the 0.1.0 validation record.
+  GPU image accelerates synthesis and NVENC re-encoding; GPU performance and
+  NVENC chunk concatenation still need validation on an NVIDIA host and are
+  not part of the 0.2.0 CPU validation record.
 - Preview rendering requires Playwright/Chromium and poppler, which are in the
   main image, not the offline app-only image.
 - The project source is MIT-licensed; third-party components and the TeraTTSv2
@@ -111,8 +114,9 @@ under `out/`; it keeps the empty directory in a checkout.
 
 ## Suggested release notes
 
-> Early access 0.1.0: EPUB to narrated 1080p MP4, TeraTTSv2 on CPU, cached
+> Early access 0.2.0: EPUB to narrated 1080p MP4, TeraTTSv2 on CPU, cached
 > per-segment synthesis, illustration/table/link-preview frames, QR fallback,
-> chapter markers, and bounded rendering for long books. Optional NVIDIA CUDA
-> and NVENC acceleration with automatic CPU fallback. Validated on four
-> full-length Russian books. Books and generated media are not included.
+> chapter markers, and bounded, resumable rendering for long books. Optional
+> NVIDIA CUDA and NVENC acceleration with automatic CPU fallback. Validated
+> on four full-length Russian books. Books and generated media are not
+> included.

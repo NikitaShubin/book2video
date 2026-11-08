@@ -161,7 +161,7 @@ Do not start a full-book build until one chapter passes this checklist.
 
 ## Full-book validation record
 
-The 0.1.0 release was validated on four complete books, not only a pilot
+The 0.2.0 release was validated on four complete books, not only a pilot
 chapter. The durations, frame counts, chapter counts and A/V deltas are in
 [docs/RELEASE.md](RELEASE.md). One of those books has 416 frames and 149
 chapters; it is the regression case for the bounded chunk renderer. A synthetic

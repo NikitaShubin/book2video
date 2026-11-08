@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "book2video"
-version = "0.1.0"
+version = "0.2.0"
 description = "Turn Russian EPUB books into narrated MP4 videos with synchronized illustrations"
 requires-python = ">=3.10"
 dependencies = [

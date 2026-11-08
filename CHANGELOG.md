@@ -4,7 +4,7 @@ All notable changes are recorded here. The project follows a simple
 `MAJOR.MINOR.PATCH` scheme; during early access, minor versions may change
 command-line behaviour.
 
-## Unreleased
+## 0.2.0 - 2026-11-08
 
 ### Added
 
@@ -19,6 +19,7 @@ command-line behaviour.
 - `Dockerfile.offline` can rebuild either the CPU or the GPU image through
   `BASE_IMAGE`.
 - ADR-0011 records the NVIDIA decision.
+- 98 automated tests, including render-part reuse.
 
 ### Changed
 
