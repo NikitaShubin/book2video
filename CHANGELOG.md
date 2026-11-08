@@ -26,6 +26,10 @@ command-line behaviour.
   96 inputs at 1080p reached 8.2 GiB RSS and were killed before encoding
   started; 32 keeps peak memory near 3 GiB. Long books are split into more
   parts and joined by the same concat demuxer.
+- Finished render parts are reused after an interruption. A part is reused
+  only when its frame inputs and encoder settings match and ffprobe confirms
+  its expected duration, so a killed or stale part is re-encoded instead of
+  being spliced into the output.
 
 ## 0.1.0 - 2026-11-07
 

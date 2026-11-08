@@ -57,6 +57,7 @@ tests themselves never need a GPU: device detection and the probe are mocked.
 | `test_epub` | package metadata, content filtering, image+caption extraction, chapter selection |
 | `test_voices` | unique ids, defaults, opposite-gender selection, non-whisper default, unknown voice |
 | `test_build` | full EPUB → MP4 with a fake backend and an injected preview: H.264/AAC, non-zero duration, chapter marker, content frame in `timeline.json`, and bounded chunk rendering |
+| `test_render` | finished render parts are reusable only when frame inputs, encoder settings and ffprobe duration match |
 
 The PDF tests use `pdfinfo` and `pdftoppm` from `poppler-utils`; they are
 skipped with a clear message if the tool is missing. The production image

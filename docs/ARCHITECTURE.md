@@ -95,7 +95,9 @@ There are four real seams:
   command line. Frame scheduling never depends on encoder details. Short books
   use one concat-filter pass; books above 32 frames are encoded in bounded
   chunks and joined by the concat demuxer, which keeps memory flat for
-  illustrations-heavy books.
+  illustrations-heavy books. Each part is recorded in a manifest keyed by the
+  frame inputs and encoder settings, and a completed part is reused after an
+  interruption only when ffprobe confirms its expected duration.
 
 `Book.read(resource)` is the adapter between the EPUB archive and frame
 preparation; it keeps ZIP access out of `render`.

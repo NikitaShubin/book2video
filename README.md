@@ -143,6 +143,10 @@ No CUDA toolkit is installed on the host. The CPU image can still use NVENC
 if it is started with `--gpus all`; TTS stays on CPU there because the CPU
 image does not carry the CUDA execution provider.
 
+Without the container toolkit, Compose fails with
+`failed to discover GPU vendor from CDI`. Install the toolkit, or use
+`compose.yaml` alone for a CPU build.
+
 Books are mounted read-only at `/data` (the parent directory of this project),
 output goes to `./out`. Model and TTS caches live in the named volumes
 `book2video_hf-cache` and `book2video_b2v-cache`, so rebuilding the image does
@@ -303,7 +307,8 @@ See [ADR-0004](docs/adr/0004-tera-stress-as-is.md).
    `concat` filter, encode H.264/AAC with x264 or NVENC, and attach MP4
    metadata and chapters. Books with more than 32 frames are encoded in
    bounded chunks and joined losslessly, so a 400-frame book cannot exhaust
-   the container's memory.
+   the container's memory. Finished chunks are reused when an interrupted
+   render is restarted with the same frames and encoder settings.
 
 The module map and design rationale are in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); audio details are in

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -514,6 +515,59 @@ def _render_single(
     subprocess.run(command, check=True)
 
 
+def _part_is_complete(path: Path, duration: float) -> bool:
+    """Return True when ``path`` is a finished part of the expected length.
+
+    A killed ffmpeg leaves a truncated MP4 without a usable ``moov`` atom, so
+    ffprobe fails or reports a shorter duration.  Reuse is deliberately strict:
+    the duration must match within 100 ms.
+    """
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=nw=1:nk=1",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        return False
+    try:
+        actual = float(result.stdout.strip())
+    except ValueError:
+        return False
+    return abs(actual - duration) <= 0.1
+
+
+def _chunk_signature(
+    chunk: list[tuple[str, float, float]],
+    encoder: str,
+    crf: int,
+    preset: str,
+) -> str:
+    """Identify the exact inputs and settings that produce one rendered part."""
+    payload = [
+        [str(Path(image).resolve()), f"{max(0.04, end - start):.3f}"]
+        for image, start, end in chunk
+    ]
+    payload.append([encoder, crf, preset])
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+
 def _render_chunked(
     entries: list[tuple[str, float, float]],
     *,
@@ -527,15 +581,39 @@ def _render_chunked(
     encoder: str,
 ) -> None:
     parts_dir = work / "render-parts"
+    chunks = [
+        entries[offset : offset + MAX_RENDER_INPUTS]
+        for offset in range(0, len(entries), MAX_RENDER_INPUTS)
+    ]
+    signatures = [
+        _chunk_signature(chunk, encoder, crf, preset) for chunk in chunks
+    ]
+
+    # Resume a previous run only when every chunk describes the same frames and
+    # encoder settings.  Otherwise stale parts could be spliced into a
+    # different plan, so start clean.
+    reuse_parts = False
     if parts_dir.exists():
-        shutil.rmtree(parts_dir)
-    parts_dir.mkdir(parents=True)
+        try:
+            reuse_parts = json.loads(
+                (parts_dir / "manifest.json").read_text(encoding="utf-8")
+            ) == signatures
+        except (OSError, ValueError):
+            reuse_parts = False
+        if not reuse_parts:
+            shutil.rmtree(parts_dir)
+    parts_dir.mkdir(parents=True, exist_ok=True)
+    (parts_dir / "manifest.json").write_text(
+        json.dumps(signatures), encoding="utf-8"
+    )
 
     parts: list[Path] = []
-    for index, offset in enumerate(range(0, len(entries), MAX_RENDER_INPUTS)):
-        chunk = entries[offset : offset + MAX_RENDER_INPUTS]
+    for index, chunk in enumerate(chunks):
         duration = sum(max(0.04, end - start) for _, start, end in chunk)
         part = parts_dir / f"part_{index:03d}.mp4"
+        if reuse_parts and _part_is_complete(part, duration):
+            parts.append(part)
+            continue
         command = [
             "ffmpeg",
             "-y",
